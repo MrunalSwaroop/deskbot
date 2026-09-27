@@ -103,7 +103,7 @@ Run from the Deskbot root:
 ```powershell
 python tools/check_release.py
 arduino-cli lib install "Adafruit GFX Library" "Adafruit SSD1306" ESP32Servo
-arduino-cli compile --fqbn esp32:esp32:XIAO_ESP32S3 firmware/xiao_esp32s3_sense
+arduino-cli compile --fqbn "esp32:esp32:XIAO_ESP32S3:PSRAM=opi,FlashMode=qio,FlashSize=8M,USBMode=hwcdc,CDCOnBoot=default,UploadMode=default,PartitionScheme=default_8MB" firmware/xiao_esp32s3_sense
 ```
 
 ## Migration from the old local tree

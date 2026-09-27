@@ -6,6 +6,16 @@ This file is included in every ZIP release. It records the requirements addresse
 
 2026-09-27
 
+### OTA 0.0.2 boot-failure correction
+
+**Requirement:** Recover the board after the first OTA image rebooted continuously at `ESP-ROM:esp32s3-20210327`, and prevent the next OTA bootstrap from installing another image built with mismatched XIAO settings.
+
+**Problem corrected:** The GitHub workflow compiled the OTA image with an unqualified FQBN and an unpinned ESP32 core. That did not explicitly reproduce the successful Arduino IDE configuration (`OPI PSRAM`, 8 MB flash, OTA-capable 8 MB partition, Hardware CDC, and QIO settings).
+
+**Changes made:** Pinned GitHub Actions to ESP32 Arduino core `3.3.11`, added the explicit verified XIAO FQBN to both compile workflows, recorded that FQBN in `boards/xiao-esp32s3-sense/board.json`, updated the release checker and local compile instructions, and kept the v0.0.1 base OTA-disabled until a corrected OTA image is published.
+
+**Recovery state:** The board was reflashed successfully and is running `0.0.1-base` with `otaConfigured: false`. Do not create `ota_target.h` until the corrected OTA workflow completes successfully.
+
 ### Deskbot v0.0.1 frozen hardware baseline and OTA transition
 
 **Requirement:** Treat the currently working XIAO Sense hardware state as the reproducible Deskbot base, defer expression tuning to a later release, and move to OTA updates without reconnecting USB for every change.

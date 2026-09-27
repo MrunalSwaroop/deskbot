@@ -3,7 +3,7 @@
 From the Deskbot repository root:
 
 ```powershell
-arduino-cli compile --fqbn esp32:esp32:XIAO_ESP32S3 firmware/xiao_esp32s3_sense
+arduino-cli compile --fqbn "esp32:esp32:XIAO_ESP32S3:PSRAM=opi,FlashMode=qio,FlashSize=8M,USBMode=hwcdc,CDCOnBoot=default,UploadMode=default,PartitionScheme=default_8MB" firmware/xiao_esp32s3_sense
 ```
 
 Install the required libraries once:

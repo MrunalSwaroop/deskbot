@@ -40,7 +40,7 @@ jobs:
         run: |
           arduino-cli config init --overwrite
           arduino-cli core update-index
-          arduino-cli core install esp32:esp32
+          arduino-cli core install esp32:esp32@3.3.11
       - name: Install libraries
         run: |
           arduino-cli lib install "Adafruit GFX Library"
@@ -52,7 +52,7 @@ jobs:
         run: |
           test ! -e firmware/xiao_esp32s3_sense/ota_target.h
           arduino-cli compile \
-            --fqbn esp32:esp32:XIAO_ESP32S3 \
+            --fqbn 'esp32:esp32:XIAO_ESP32S3:PSRAM=opi,FlashMode=qio,FlashSize=8M,USBMode=hwcdc,CDCOnBoot=default,UploadMode=default,PartitionScheme=default_8MB' \
             --warnings all \
             --output-dir build/xiao-esp32s3-sense \
             firmware/xiao_esp32s3_sense
