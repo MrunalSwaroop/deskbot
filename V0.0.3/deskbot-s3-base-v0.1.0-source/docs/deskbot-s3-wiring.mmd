@@ -1,0 +1,24 @@
+flowchart TD
+  USB[USB-C data cable<br/>temporary programming / bench power] --> XIAO[XIAO ESP32-S3<br/>or XIAO ESP32-S3 Sense]
+  BAT[Battery matched to motor rating] --> FUSE[Inline fuse / power switch]
+  FUSE --> VM[TB6612FNG VM<br/>motor power rail]
+  CAP[470–1000 µF bulk capacitor<br/>+ 0.1 µF ceramic] --- VM
+  XIAO -->|GPIO 1 D0| AIN1[TB6612FNG AIN1]
+  XIAO -->|GPIO 2 D1| AIN2[TB6612FNG AIN2]
+  XIAO -->|GPIO 3 D2| BIN1[TB6612FNG BIN1]
+  XIAO -->|GPIO 4 D3| BIN2[TB6612FNG BIN2]
+  XIAO -->|3.3 V logic| LOGIC[TB6612FNG VCC<br/>PWMA/PWMB/STBY]
+  VM --> MOTORS[Left & right N20 motors]
+  XIAO -->|GPIO 5 D4 SDA| I2C[I²C bus]
+  XIAO -->|GPIO 6 D5 SCL| I2C
+  I2C --> TOF[VL53L5CX 8×8 ToF]
+  I2C --> IMU[ISM330DHCX IMU]
+  I2C --> MAG[MMC5983MA magnetometer]
+  XIAO -->|GPIO 7 D8 optional| XSHUT[VL53L5CX LPn / XSHUT]
+  XIAO ---|GND common only| GND[Driver, sensors, regulator grounds]
+  VM --- GND
+  XIAO --- GND
+  style BAT fill:#f6ba4e,stroke:#926c1f,color:#111
+  style XIAO fill:#0e4e5c,stroke:#32d8e5,color:#eaf2ff
+  style VM fill:#352814,stroke:#f6ba4e,color:#eaf2ff
+  style GND fill:#252d3a,stroke:#98a6bd,color:#eaf2ff

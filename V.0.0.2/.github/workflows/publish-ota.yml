@@ -1,0 +1,114 @@
+name: Publish Deskbot OTA
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'boards/**'
+      - 'firmware/**'
+      - 'modules/**'
+      - 'fleet/**'
+      - 'tools/**'
+      - 'VERSION'
+      - '.github/workflows/publish-ota.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: deskbot-pages
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+      - name: Install ESP32 core and libraries
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32
+          arduino-cli lib install "Adafruit GFX Library"
+          arduino-cli lib install "Adafruit SSD1306"
+          arduino-cli lib install "ESP32Servo"
+      - name: Check release contract
+        run: python3 tools/check_release.py
+      - name: Calculate release and fleet policy
+        id: release
+        shell: bash
+        run: |
+          BASE_VERSION="$(tr -d '[:space:]' < VERSION)"
+          MAJOR="${BASE_VERSION%%.*}"
+          REST="${BASE_VERSION#*.}"
+          MINOR="${REST%%.*}"
+          PATCH="${REST##*.}"
+          VERSION="${MAJOR}.${MINOR}.$((PATCH + GITHUB_RUN_NUMBER))"
+          OWNER="${{ github.repository_owner }}"
+          REPOSITORY="${{ github.event.repository.name }}"
+          PAGES_BASE="https://${OWNER}.github.io/${REPOSITORY}"
+          ROLLOUT="$(jq -r '.rollout // "all"' fleet/selected_boards.json)"
+          BOARDS="$(jq -c '.boards // ["all"]' fleet/selected_boards.json)"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "pages_base=${PAGES_BASE}" >> "$GITHUB_OUTPUT"
+          echo "rollout=${ROLLOUT}" >> "$GITHUB_OUTPUT"
+          echo "boards=${BOARDS}" >> "$GITHUB_OUTPUT"
+          cat > firmware/xiao_esp32s3_sense/ota_target.h <<EOF
+          #pragma once
+          #define ROCKY_OTA_ENABLED 1
+          #define APP_VERSION "${VERSION}"
+          #define OTA_UPDATE_URL "${PAGES_BASE}/ota/XIAO-ESP32S3.bin"
+          #define OTA_MANIFEST_URL "${PAGES_BASE}/ota/xiao-esp32s3-manifest.json"
+          #define OTA_MANIFEST_HOST "${OWNER}.github.io"
+          #define OTA_MANIFEST_PATH "/${REPOSITORY}/ota/xiao-esp32s3-manifest.json"
+          #define OTA_TARGET_VERSION ""
+          EOF
+      - name: Compile XIAO firmware
+        run: |
+          arduino-cli compile \
+            --fqbn esp32:esp32:XIAO_ESP32S3 \
+            --warnings all \
+            --output-dir build/xiao-esp32s3-sense \
+            firmware/xiao_esp32s3_sense
+      - name: Assemble Pages artifact
+        shell: bash
+        run: |
+          mkdir -p site/ota
+          cp build/xiao-esp32s3-sense/xiao_esp32s3_sense.ino.bin site/ota/XIAO-ESP32S3.bin
+          sha256sum site/ota/XIAO-ESP32S3.bin > site/ota/SHA256SUMS.txt
+          cat > site/ota/xiao-esp32s3-manifest.json <<EOF
+          {
+            "device": "XIAO-ESP32S3",
+            "version": "${{ steps.release.outputs.version }}",
+            "firmware": "${{ steps.release.outputs.pages_base }}/ota/XIAO-ESP32S3.bin",
+            "sha256": "$(cut -d ' ' -f 1 site/ota/SHA256SUMS.txt)",
+            "rollout": "${{ steps.release.outputs.rollout }}",
+            "boards": ${{ steps.release.outputs.boards }},
+            "source": "${{ github.sha }}"
+          }
+          EOF
+          mkdir -p "site/releases/${{ steps.release.outputs.version }}"
+          cp site/ota/XIAO-ESP32S3.bin "site/releases/${{ steps.release.outputs.version }}/XIAO-ESP32S3.bin"
+          cp site/ota/xiao-esp32s3-manifest.json "site/releases/${{ steps.release.outputs.version }}/manifest.json"
+          cp site/ota/SHA256SUMS.txt "site/releases/${{ steps.release.outputs.version }}/SHA256SUMS.txt"
+          cat > site/index.html <<EOF
+          <!doctype html><meta charset="utf-8"><title>Deskbot OTA</title><h1>Deskbot OTA</h1><p>Published version ${{ steps.release.outputs.version }} for XIAO-ESP32S3.</p><p>Rollout: ${{ steps.release.outputs.rollout }}.</p>
+          EOF
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - name: Deploy Pages artifact
+        id: deployment
+        uses: actions/deploy-pages@v4
