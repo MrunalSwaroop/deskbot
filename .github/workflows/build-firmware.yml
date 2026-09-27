@@ -1,0 +1,51 @@
+name: Build firmware
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'xiao_bringup/**'
+      - '.github/workflows/build-firmware.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'xiao_bringup/**'
+      - '.github/workflows/build-firmware.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+      - name: Install ESP32 core
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32
+      - name: Install libraries
+        run: |
+          arduino-cli lib install "Adafruit GFX Library"
+          arduino-cli lib install "Adafruit SSD1306"
+          arduino-cli lib install "ESP32Servo"
+      - name: Compile XIAO ESP32-S3 Sense bring-up
+        run: |
+          arduino-cli compile \
+            --fqbn esp32:esp32:XIAO_ESP32S3 \
+            --warnings all \
+            --output-dir build/xiao \
+            xiao_bringup
+      - name: Upload compile artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: xiao-esp32s3-firmware
+          path: |
+            build/xiao/*.bin
+            build/xiao/*.elf
+            build/xiao/*.map
+          if-no-files-found: error

@@ -1,0 +1,79 @@
+flowchart LR
+  %% Rocky XIAO ESP32-S3 Sense desk robot — complete wiring map
+  %% Audio branch is for the confirmed MAX98357A I2S mono amplifier.
+
+  X["Seeed XIAO ESP32-S3 Sense<br/>active controller"]
+  O["SSD1306 OLED<br/>128x64 I2C"]
+  S["Pan servo<br/>signal / +5V / GND"]
+  D["DRV8833 dual H-bridge<br/>A and B channels"]
+  L["N90 left motor<br/>AOUT1 / AOUT2"]
+  R["N90 right motor<br/>BOUT1 / BOUT2"]
+  SLP["DRV8833 nSLEEP / SLP<br/>tie HIGH to XIAO 3V3"]
+  MPS["Separate motor supply<br/>VM suitable for N90 motors"]
+  SPS["External regulated servo supply<br/>+5V recommended"]
+  G["COMMON GROUND<br/>XIAO + servo + motor + audio"]
+
+  AMP["MAX98357A I2S mono amp<br/>confirmed module family"]
+  APS["Audio supply<br/>VIN 2.5–5.5V<br/>5V recommended"]
+  SPK["4Ω or 8Ω moving-coil speaker<br/>connect only between SPK+ and SPK−"]
+  AMPC["Module-specific SD/MODE and GAIN<br/>leave as board documentation specifies<br/>no XIAO GPIO reserved"]
+
+  MIC["Sense onboard PDM microphone<br/>internal connector"]
+  CAM["Sense camera<br/>internal connector"]
+  SD["Sense microSD slot<br/>NOT USED in this pin map<br/>GPIO7/8/9 conflict with audio/motor use"]
+
+  X -- "GPIO5 / D4 → SDA" --> O
+  X -- "GPIO6 / D5 → SCL" --> O
+  X -- "3V3" --> O
+  X -- "GPIO1 / D0 → signal" --> S
+  SPS -- "+5V → servo red" --> S
+  SPS -- "GND → servo ground" --> G
+  X -- "GND" --> G
+
+  X -- "GPIO43 / D6/TX → AIN1" --> D
+  X -- "GPIO44 / D7/RX → AIN2" --> D
+  X -- "GPIO7 / D8 → BIN1" --> D
+  X -- "GPIO8 / D9 → BIN2" --> D
+  X -- "3V3 → logic HIGH" --> SLP
+  SLP -- "nSLEEP / SLP" --> D
+  MPS -- "+VM → motor power" --> D
+  MPS -- "GND" --> G
+  D -- "GND" --> G
+  D -- "AOUT1 / AOUT2" --> L
+  D -- "BOUT1 / BOUT2" --> R
+
+  X -- "GPIO3 / D2 → BCLK" --> AMP
+  X -- "GPIO4 / D3 → LRC/LRCK" --> AMP
+  X -- "GPIO2 / D1 → DIN" --> AMP
+  APS -- "+VIN, 2.5–5.5V" --> AMP
+  APS -- "GND" --> G
+  AMP -- "SPK+" --> SPK
+  AMP -- "SPK−" --> SPK
+  AMP -. "SD/MODE + GAIN" .-> AMPC
+
+  X -. "GPIO42 PDM CLK<br/>GPIO41 PDM DATA" .-> MIC
+  X -. "internal camera GPIOs<br/>10/11/12/13/14/15/16/17/18/38/39/40/47/48" .-> CAM
+  X -. "GPIO21 CS; GPIO7 SCK;<br/>GPIO8 MISO; GPIO9 MOSI" .-> SD
+
+  WARN["DO NOT CONNECT<br/>• motor VM or servo +5V to XIAO 3V3<br/>• either speaker lead to GND<br/>• 5V to any XIAO GPIO<br/>• a speaker output to any other circuit"]
+
+  classDef controller fill:#d9ecff,stroke:#1d5d9b,color:#111,stroke-width:2px;
+  classDef logic fill:#e9f7e9,stroke:#31834b,color:#111;
+  classDef motor fill:#ffe8d1,stroke:#a85e00,color:#111;
+  classDef power fill:#fff0b8,stroke:#9a6700,color:#111;
+  classDef audio fill:#f0e5ff,stroke:#7143a5,color:#111;
+  classDef reserved fill:#eeeeee,stroke:#666,color:#111;
+  classDef warning fill:#ffd8d8,stroke:#a52a2a,color:#111,stroke-width:2px;
+
+  class X controller;
+  class O,SLP logic;
+  class D,L,R motor;
+  class MPS,SPS,G,APS power;
+  class AMP,SPK,AMPC audio;
+  class MIC,CAM,SD reserved;
+  class WARN warning;
+
+  %% Electrical rules:
+  %% 1. All external-supply negatives and XIAO GND share one common ground.
+  %% 2. MAX98357A speaker output is bridge-tied; neither SPK+ nor SPK- is ground.
+  %% 3. This audio branch is for the confirmed MAX98357A module family.
