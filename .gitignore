@@ -1,0 +1,13 @@
+# Local secrets
+**/arduino_secrets.h
+**/secrets.h
+**/ota_target.h
+**/.env
+**/.env.*
+!**/.env.example
+**/*.pem
+**/*.key
+
+# Python caches
+**/__pycache__/
+*.pyc
