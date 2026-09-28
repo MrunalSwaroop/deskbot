@@ -55,6 +55,8 @@ def main() -> None:
     expected_fqbn = "esp32:esp32:XIAO_ESP32S3:PSRAM=opi,FlashMode=qio,FlashSize=8M,USBMode=hwcdc,CDCOnBoot=default,UploadMode=default,PartitionScheme=default_8MB"
     if board.get("fqbn") != expected_fqbn:
         fail("active board profile does not use the verified XIAO Sense build settings")
+    if board.get("core_version") != "3.3.7":
+        fail("active board profile does not pin ESP32 Arduino core 3.3.7")
     if fleet.get("rollout") not in {"all", "selected"}:
         fail("fleet rollout must be all or selected")
     if not isinstance(fleet.get("boards"), list) or not fleet["boards"]:

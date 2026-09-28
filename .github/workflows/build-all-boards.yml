@@ -40,7 +40,7 @@ jobs:
         run: |
           arduino-cli config init --overwrite
           arduino-cli core update-index
-          arduino-cli core install esp32:esp32@3.3.11
+          arduino-cli core install esp32:esp32@3.3.7
       - name: Install libraries
         run: |
           arduino-cli lib install "Adafruit GFX Library"
