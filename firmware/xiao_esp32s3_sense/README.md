@@ -98,13 +98,16 @@ It provides face and personality buttons, servo control, motor tests and inversi
 
 If the normal Wi-Fi connection succeeds but no page opens, use the exact `DASHBOARD: http://...` address printed by the board and make sure the phone/computer is on the same 2.4 GHz network. Do not use `0.0.0.0`; it is a bind/listen address, not a browser destination.
 
-The status API reports a unique board identity such as:
+The status API reports a unique board identity and OTA state such as:
 
 ```json
 {
   "boardId": "XIAO-ABCDEF012345",
-  "firmware": "0.0.1-base",
-  "otaConfigured": false
+  "firmware": "0.0.5.1",
+  "otaConfigured": true,
+  "otaState": "up_to_date",
+  "otaProgress": 100,
+  "otaUpdateAvailable": false
 }
 ```
 
@@ -303,3 +306,18 @@ Keep USB recovery available. If a release misbehaves, publish a higher version c
 [2]: https://wiki.seeedstudio.com/xiao_esp32s3_getting_started/ "Seeed XIAO ESP32-S3 getting started guide"
 [3]: https://wiki.seeedstudio.com/xiao_esp32s3_sense_mic/ "Seeed XIAO ESP32-S3 Sense microphone guide"
 [4]: https://www.ti.com/product/DRV8833 "Texas Instruments DRV8833 product page"
+
+
+## OLED inversion and OTA feedback
+
+The OLED palette can be changed without reflashing:
+
+```text
+oled invert on
+oled invert off
+oled invert toggle
+```
+
+The dashboard exposes the same controls. The OTA-capable image reports `checking`, `update_available`, `downloading`, `installing`, `rebooting`, `up_to_date`, or `error` through Serial, the OLED progress screen, the dashboard banner, and `/api/status`.
+
+Follow [`../../docs/RELEASE_V0.0.5.1.md`](../../docs/RELEASE_V0.0.5.1.md) for the exact commit, push, and cable-free update sequence.

@@ -47,12 +47,11 @@ jobs:
         id: release
         shell: bash
         run: |
-          BASE_VERSION="$(tr -d '[:space:]' < VERSION)"
-          MAJOR="${BASE_VERSION%%.*}"
-          REST="${BASE_VERSION#*.}"
-          MINOR="${REST%%.*}"
-          PATCH="${REST##*.}"
-          VERSION="${MAJOR}.${MINOR}.$((PATCH + GITHUB_RUN_NUMBER))"
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "VERSION must be four-part semver for OTA releases: $VERSION"
+            exit 1
+          fi
           OWNER="${{ github.repository_owner }}"
           REPOSITORY="${{ github.event.repository.name }}"
           PAGES_BASE="https://${OWNER}.github.io/${REPOSITORY}"

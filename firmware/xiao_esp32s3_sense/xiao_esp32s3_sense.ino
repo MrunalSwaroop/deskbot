@@ -75,6 +75,9 @@ bool audioToneActive = false;
 bool headFollowsState = true;
 bool danceActive = false;
 bool liveCameraActive = false;
+bool oledInverted = false;
+String otaUiState = "idle";
+int otaUiProgress = 0;
 bool rockyCharacterStateOverride = false;
 bool leftMotorInvert = ROCKY_LEFT_MOTOR_INVERT;
 bool rightMotorInvert = ROCKY_RIGHT_MOTOR_INVERT;
@@ -97,6 +100,9 @@ bool drawImportedCharacter();
 void drawEyes(int eyeY, int eyeH, bool narrow, bool round, bool lookingLeft, bool lookingRight);
 void drawMouth();
 void drawWiFiIndicator();
+void drawOtaIndicator();
+void onOtaUiEvent(const char *state, int progress);
+void setOledInverted(bool enabled, const String &reason);
 void drawPersonalityAccent();
 void updateIsabellaMood();
 void updateMicrophone();
@@ -183,12 +189,15 @@ void setup() {
   savedPassword = preferences.getString("pass", "");
   leftMotorInvert = preferences.getBool("leftInv", ROCKY_LEFT_MOTOR_INVERT);
   rightMotorInvert = preferences.getBool("rightInv", ROCKY_RIGHT_MOTOR_INVERT);
+  oledInverted = preferences.getBool("oledInv", false);
+  display.invertDisplay(oledInverted);
 
   setupRoutes();
   // Network must exist before WebServer::begin() on recent ESP32 cores.
   connectStoredWiFi();
   server.begin();
   configTime(ROCKY_DEFAULT_TIMEZONE_OFFSET_SECONDS, 0, "pool.ntp.org", "time.nist.gov");
+  otaService.setUiCallback(onOtaUiEvent);
   otaService.begin();
 
   setFace(FACE_IDLE, "Ready");
@@ -206,6 +215,7 @@ void setup() {
   Serial.println("          pan 0..180, head auto/on/off, motor forward/back/left/right/test/stop");
   Serial.println("          motor speed 0..255, motor invert left/right on/off, dance start/stop, mic monitor");
   Serial.println("          audio tone [Hz] [ms], audio stop");
+  Serial.println("          oled invert on/off/toggle");
 }
 
 void loop() {
@@ -290,6 +300,10 @@ void processSerialCommand(const String &command) {
     Serial.print("Head follows state: "); Serial.println(headFollowsState ? "on" : "off");
     Serial.print("Dance: "); Serial.println(danceActive ? "active" : "off");
     Serial.print("Motor invert L/R: "); Serial.print(leftMotorInvert); Serial.print("/"); Serial.println(rightMotorInvert);
+    Serial.print("OLED invert: "); Serial.println(oledInverted ? "on" : "off");
+    Serial.print("OTA state: "); Serial.println(otaService.stateName());
+    Serial.print("OTA remote version: "); Serial.println(otaService.remoteVersion());
+    Serial.print("OTA progress: "); Serial.print(otaService.progress()); Serial.println("%");
     Serial.print("Board ID: "); Serial.println(otaService.boardId());
     Serial.print("Firmware: "); Serial.println(APP_VERSION);
     Serial.println("OTA: checked once at boot; requires ota_target.h and a published newer manifest");
@@ -373,6 +387,15 @@ void processSerialCommand(const String &command) {
     return;
   }
 
+  if (lower.startsWith("oled invert")) {
+    String value = lower.substring(11);
+    value.trim();
+    if (value == "toggle") setOledInverted(!oledInverted, "OLED invert toggled");
+    else if (value == "on" || value == "1" || value == "true") setOledInverted(true, "OLED inverted");
+    else if (value == "off" || value == "0" || value == "false") setOledInverted(false, "OLED normal");
+    else Serial.println("Use: oled invert on/off/toggle");
+    return;
+  }
   if (lower.startsWith("pan ")) {
     setPan(constrain(lower.substring(4).toInt(), ROCKY_SERVO_MIN_ANGLE, ROCKY_SERVO_MAX_ANGLE));
     return;
@@ -1068,6 +1091,7 @@ void handleRoot() {
   html += "<button onclick=\"cmd('personality engineer')\">Engineer</button>";
   html += "<button onclick=\"cmd('personality spartan')\">Spartan</button>";
   html += "<button class='isabella' onclick=\"cmd('personality isabella')\">Isabella</button></section>";
+  html += "<section><h2>OLED display</h2><p class='muted'>Invert the monochrome OLED palette without reflashing. The setting is stored on the board.</p><button onclick=\"cmd('oled invert on')\">Invert ON</button><button onclick=\"cmd('oled invert off')\">Invert OFF</button><button onclick=\"cmd('oled invert toggle')\">Toggle</button></section>";
   html += "<section><h2>Pan servo</h2>";
   html += "<button onclick=\"cmd('pan 0')\">0°</button><button onclick=\"cmd('pan 90')\">90°</button><button onclick=\"cmd('pan 180')\">180°</button>";
   html += "<input id='angle' type='number' min='0' max='180' value='90'><button onclick=\"cmd('pan '+document.getElementById('angle').value)\">Move</button></section>";
@@ -1079,9 +1103,9 @@ void handleRoot() {
   html += "<input id='speed' type='number' min='0' max='255' value='100'><button onclick=\"cmd('motor speed '+document.getElementById('speed').value)\">Set speed</button><br><button onclick=\"cmd('motor invert left on')\">Left invert ON</button><button onclick=\"cmd('motor invert left off')\">Left invert OFF</button><button onclick=\"cmd('motor invert right on')\">Right invert ON</button><button onclick=\"cmd('motor invert right off')\">Right invert OFF</button></section>";
   html += "<section><h2>Single-function tests</h2><button onclick=\"cmd('test oled')\">Test OLED</button><button onclick=\"cmd('test servo')\">Test servo</button><button onclick=\"cmd('test left')\">Test left motor</button><button onclick=\"cmd('test right')\">Test right motor</button><button onclick=\"cmd('test motor')\">Test motors</button><button onclick=\"cmd('test wifi')\">Test Wi-Fi</button><button onclick=\"cmd('test mic')\">Test microphone</button><button onclick=\"cmd('mic off')\">Stop mic</button><button onclick=\"cmd('test audio')\">Test audio tone</button><button class='stop' onclick=\"cmd('audio stop')\">Stop audio</button></section>";
   html += "<section><h2>Camera</h2><p class='muted'>Snapshot or low-rate live preview. Live mode refreshes JPEG frames without blocking the rest of the robot.</p><img id='camera' style='width:100%;max-width:640px;border-radius:10px;background:#080a0e' alt='Camera preview'><br><button onclick='refreshCamera()'>Snapshot</button><a class='button' href='/camera/live' target='_blank'>Live mode</a><a class='button' href='/camera.jpg' target='_blank'>Open JPEG</a></section>";
-  html += "<section><h2>Firmware and OTA</h2><p class='muted'>Updates are checked once at boot. The board only downloads a firmware image when the published semantic version is newer.</p><pre id='ota'>Loading...</pre><button onclick=\"cmd('restart')\">Restart and check OTA</button><p>OTA requires one bootstrap upload; after that, publish newer XIAO images from GitHub Actions and use this button.</p></section>";
+  html += "<section><h2>Firmware and OTA</h2><div id='otaBanner' class='ota idle'>OTA status: loading</div><pre id='ota'>Loading...</pre><button onclick=\"cmd('restart')\">Restart and check OTA</button><p class='muted'>After GitHub Actions publishes a newer version, this button reboots the board. The OLED and Serial Monitor show checking, downloading, progress, and rebooting.</p></section>";
   html += "<section><h2>Network</h2><a class='button' href='/wifi'>Configure Wi-Fi</a></section>";
-  html += "<script>async function cmd(c){try{let r=await fetch('/cmd?c='+encodeURIComponent(c));let t=await r.text();document.getElementById('status').textContent=t;await refreshStatus()}catch(e){document.getElementById('status').textContent='Command failed: '+e}} async function refreshStatus(){try{let r=await fetch('/api/status?ts='+Date.now());if(!r.ok)throw new Error('HTTP '+r.status);let s=await r.json();document.getElementById('status').textContent=JSON.stringify(s,null,2);document.getElementById('ota').textContent='firmware: '+s.firmware+'\\nmanifest configured: '+s.otaConfigured+'\\nOTA check: once at boot'}catch(e){document.getElementById('status').textContent='Dashboard cannot reach device: '+e}} function refreshCamera(){document.getElementById('camera').src='/camera.jpg?ts='+Date.now()} refreshStatus();refreshCamera();</script>";
+  html += "<script>async function cmd(c){try{let r=await fetch('/cmd?c='+encodeURIComponent(c));let t=await r.text();document.getElementById('status').textContent=t;await refreshStatus()}catch(e){document.getElementById('status').textContent='Command failed: '+e}} function otaText(s){let text='firmware: '+s.firmware+'\\nmanifest configured: '+s.otaConfigured+'\\nstate: '+s.otaState+'\\nremote version: '+(s.otaRemoteVersion||'unknown')+'\\nprogress: '+s.otaProgress+'%';if(s.otaError)text+='\\nerror: '+s.otaError;return text} function otaBanner(s){let el=document.getElementById('otaBanner');el.className='ota '+s.otaState;let label=s.otaState.replaceAll('_',' ');el.textContent='OTA status: '+label+(s.otaRemoteVersion?' | remote '+s.otaRemoteVersion:'')+(s.otaState==='downloading'?' | '+s.otaProgress+'%':'')} async function refreshStatus(){try{let r=await fetch('/api/status?ts='+Date.now());if(!r.ok)throw new Error('HTTP '+r.status);let s=await r.json();document.getElementById('status').textContent=JSON.stringify(s,null,2);document.getElementById('ota').textContent=otaText(s);otaBanner(s)}catch(e){document.getElementById('status').textContent='Dashboard cannot reach device: '+e}} function refreshCamera(){if(document.getElementById('camera'))document.getElementById('camera').src='/camera.jpg?ts='+Date.now()} refreshStatus();refreshCamera();setInterval(refreshStatus,5000);</script>";
   html += "</body></html>";
   server.send(200, "text/html", html);
 }
@@ -1109,9 +1133,15 @@ void handleStatus() {
   json += "\"dance\":" + String(danceActive ? "true" : "false") + ",";
   json += "\"motorInvertLeft\":" + String(leftMotorInvert ? "true" : "false") + ",";
   json += "\"motorInvertRight\":" + String(rightMotorInvert ? "true" : "false") + ",";
+  json += "\"oledInverted\":" + String(oledInverted ? "true" : "false") + ",";
   json += "\"boardId\":\"" + otaService.boardId() + "\",";
   json += "\"firmware\":\"" + String(APP_VERSION) + "\",";
   json += "\"otaConfigured\":" + String(OTA_MANIFEST_URL[0] != '\0' ? "true" : "false") + ",";
+  json += "\"otaState\":\"" + String(otaService.stateName()) + "\",";
+  json += "\"otaRemoteVersion\":\"" + htmlEscape(String(otaService.remoteVersion())) + "\",";
+  json += "\"otaProgress\":" + String(otaService.progress()) + ",";
+  json += "\"otaUpdateAvailable\":" + String(otaService.updateAvailable() ? "true" : "false") + ",";
+  json += "\"otaError\":\"" + htmlEscape(String(otaService.lastError())) + "\",";
   json += "\"time\":\"" + currentTimeText() + "\",";
   json += "\"lastEvent\":\"" + htmlEscape(lastEvent) + "\"";
   json += "}";
@@ -1166,7 +1196,7 @@ void handleNotFound() {
 }
 
 String pageHeader(const String &title) {
-  String html = "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>" + title + "</title><style>body{font-family:system-ui;background:#10131a;color:#f3f5f7;max-width:900px;margin:0 auto;padding:20px}section{background:#1b2230;border-radius:14px;padding:16px;margin:14px 0}button,.button{display:inline-block;border:0;border-radius:9px;background:#3d82f6;color:white;padding:11px 14px;margin:4px;text-decoration:none;font-size:15px}button:active{transform:scale(.97)}.stop{background:#d63855}.isabella{background:#3478f6;border:1px solid #8db7ff}.warn{color:#ffd166}.muted{color:#aeb8c9}input{padding:11px;border-radius:8px;border:1px solid #76809a;background:#0f131c;color:white;margin:5px;width:95%;box-sizing:border-box}label{display:block;margin-top:10px}pre{white-space:pre-wrap;background:#0c0f15;padding:12px;border-radius:8px}</style></head><body>";
+  String html = "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>" + title + "</title><style>body{font-family:system-ui;background:#10131a;color:#f3f5f7;max-width:900px;margin:0 auto;padding:20px}section{background:#1b2230;border-radius:14px;padding:16px;margin:14px 0}button,.button{display:inline-block;border:0;border-radius:9px;background:#3d82f6;color:white;padding:11px 14px;margin:4px;text-decoration:none;font-size:15px}button:active{transform:scale(.97)}.stop{background:#d63855}.isabella{background:#3478f6;border:1px solid #8db7ff}.warn{color:#ffd166}.muted{color:#aeb8c9}input{padding:11px;border-radius:8px;border:1px solid #76809a;background:#0f131c;color:white;margin:5px;width:95%;box-sizing:border-box}label{display:block;margin-top:10px}pre{white-space:pre-wrap;background:#0c0f15;padding:12px;border-radius:8px}.ota{padding:12px;border-radius:8px;text-transform:capitalize;font-weight:600}.ota.up_to_date{background:#164b35;color:#b9ffd7}.ota.update_available,.ota.downloading,.ota.installing,.ota.rebooting{background:#594313;color:#ffe9a6}.ota.error{background:#5b1c2c;color:#ffd0da}.ota.disabled{background:#303744;color:#cbd5e1}</style></head><body>";
   return html;
 }
 
@@ -1250,8 +1280,46 @@ void updateIsabellaMood() {
   nextIsabellaMoodAt = millis() + random(ROCKY_ISABELLA_MOOD_MIN_MS, ROCKY_ISABELLA_MOOD_MAX_MS);
 }
 
+void setOledInverted(bool enabled, const String &reason) {
+  oledInverted = enabled;
+  preferences.putBool("oledInv", oledInverted);
+  display.invertDisplay(oledInverted);
+  lastEvent = reason + String(": ") + (oledInverted ? "on" : "off");
+  Serial.println(lastEvent);
+  drawFace();
+}
+
+void onOtaUiEvent(const char *state, int progress) {
+  otaUiState = String(state);
+  otaUiProgress = progress;
+  if (otaUiState == "checking" || otaUiState == "update_available" || otaUiState == "downloading" || otaUiState == "installing" || otaUiState == "rebooting") {
+    drawOtaIndicator();
+  }
+}
+
+void drawOtaIndicator() {
+  display.invertDisplay(oledInverted);
+  display.clearDisplay();
+  display.setTextColor(SSD1306_WHITE);
+  display.setTextSize(1);
+  display.setCursor(8, 8);
+  display.print("Deskbot OTA");
+  display.setCursor(8, 23);
+  display.print(otaUiState);
+  if (otaUiState == "downloading" || otaUiState == "installing") {
+    display.print(" ");
+    display.print(otaUiProgress);
+    display.print("%");
+  }
+  display.drawRect(8, 40, 112, 10, SSD1306_WHITE);
+  const int width = constrain((otaUiProgress * 108) / 100, 0, 108);
+  if (width > 0) display.fillRect(10, 42, width, 6, SSD1306_WHITE);
+  display.display();
+}
+
 void drawFace() {
   if (!display.width()) return;
+  display.invertDisplay(oledInverted);
   display.clearDisplay();
 
   // The referenced desktop-pet OLED task keeps character identity separate

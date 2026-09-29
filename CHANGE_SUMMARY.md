@@ -6,6 +6,20 @@ This file is included in every ZIP release. It records the requirements addresse
 
 2026-09-27
 
+### Deskbot v0.0.5.1 — OLED inversion and visible OTA state
+
+**Requirement:** Starting from the saved and tagged v0.0.4 OTA-stable baseline, allow the OLED background/palette to be inverted without USB and make remote OTA availability, progress, and errors visible while preserving the modular architecture.
+
+**Changes made:**
+
+- Changed `VERSION` and the publish workflow to use the exact four-part release `0.0.5.1`; GitHub run numbers no longer alter the firmware version.
+- Added persistent `oled invert on/off/toggle` commands and dashboard buttons backed by XIAO NVS.
+- Added `otaState`, `otaRemoteVersion`, `otaProgress`, `otaUpdateAvailable`, and `otaError` to `/api/status`.
+- Added OTA state transitions, HTTPUpdate progress callbacks, Serial progress output, an OLED OTA progress screen, and a dashboard OTA banner.
+- Added `docs/RELEASE_V0.0.5.1.md` with the exact PowerShell commit/push/manifest/update/verification sequence.
+
+**Verification target:** `python tools\check_release.py`, green **Build all boards**, green **Publish Deskbot OTA**, manifest version `0.0.5.1`, board reboot through **Restart and check OTA**, then `firmware: 0.0.5.1` and `otaState: up_to_date`.
+
 ### OTA 0.0.2 boot-failure correction
 
 **Requirement:** Recover the board after the first OTA image rebooted continuously at `ESP-ROM:esp32s3-20210327`, and prevent the next OTA bootstrap from installing another image built with mismatched XIAO settings.

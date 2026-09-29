@@ -8,5 +8,6 @@
   "psram_required_for_camera": true,
   "ota_partition_required": true,
   "pinmap": "boards/xiao-esp32s3-sense/pinmap.h",
-  "core_version": "3.3.7"
+  "core_version": "3.3.7",
+  "release_version_format": "x.y.z.w"
 }

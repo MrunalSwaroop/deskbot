@@ -8,7 +8,7 @@ C:\Users\msperavali\OneDrive - VE Commercial Vehicles Ltd\Mrunal\Deskbot
 
 The active controller is the **Seeed XIAO ESP32-S3 Sense**. Historical UNO and generic ESP32 experiments are retained under `legacy/` and are not part of the active XIAO build.
 
-The current frozen hardware baseline is **v0.0.1**. Expression artwork and mapping are known follow-up work; future changes must use a higher version.
+The running OTA-stable baseline is **v0.0.4**. This release adds the first exact four-part OTA version, **v0.0.5.1**, plus persistent OLED inversion and visible OTA progress.
 
 ## What this release provides
 
@@ -112,7 +112,7 @@ Extract the flat ZIP directly over the existing `Deskbot` root. Do not create `D
 
 ## GitHub version and fleet OTA
 
-`VERSION` is the human-maintained semantic release source. Every release must include the complete firmware, all registered modules, the board profile, hardware documentation, workflow files, and an updated `CHANGE_SUMMARY.md`.
+`VERSION` is the human-maintained four-part OTA release source (`x.y.z.w`). Every release must include the complete firmware, all registered modules, the board profile, hardware documentation, workflow files, and an updated `CHANGE_SUMMARY.md`. Do not append the GitHub Actions run number.
 
 GitHub Actions runs the release checker, compiles the XIAO board profile, creates the OTA-enabled release build, generates the manifest and SHA-256, and publishes GitHub Pages. Every board reports a unique ID such as `XIAO-ABCDEF012345` through `status` and `/api/status`.
 
@@ -140,3 +140,6 @@ Every release updates [`CHANGE_SUMMARY.md`](CHANGE_SUMMARY.md) with the requirem
 [2]: https://wiki.seeedstudio.com/xiao_esp32s3_getting_started/ "Seeed XIAO ESP32-S3 getting started guide"
 [3]: https://wiki.seeedstudio.com/xiao_esp32s3_sense_mic/ "Seeed XIAO ESP32-S3 Sense microphone guide"
 [4]: https://www.ti.com/product/DRV8833 "Texas Instruments DRV8833 product page"
+
+
+For the exact v0.0.5.1 commit, push, OTA verification, and OLED inversion checklist, read [`docs/RELEASE_V0.0.5.1.md`](docs/RELEASE_V0.0.5.1.md).

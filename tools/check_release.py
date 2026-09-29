@@ -29,6 +29,7 @@ REQUIRED = [
     Path("firmware/xiao_esp32s3_sense/secrets.h.example"),
     Path("hardware/wiring/complete_wiring.mmd"),
     Path("CHANGE_SUMMARY.md"),
+    Path("docs/RELEASE_V0.0.5.1.md"),
 ]
 
 
@@ -43,8 +44,8 @@ def main() -> None:
         fail("missing required files: " + ", ".join(missing))
 
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
-    if not re.fullmatch(r"\d+\.\d+\.\d+", version):
-        fail(f"VERSION is not semantic x.y.z: {version!r}")
+    if not re.fullmatch(r"\d+\.\d+\.\d+\.\d+", version):
+        fail(f"VERSION is not semantic x.y.z.w: {version!r}")
 
     try:
         board = json.loads((ROOT / "boards/xiao-esp32s3-sense/board.json").read_text())
@@ -57,6 +58,8 @@ def main() -> None:
         fail("active board profile does not use the verified XIAO Sense build settings")
     if board.get("core_version") != "3.3.7":
         fail("active board profile does not pin ESP32 Arduino core 3.3.7")
+    if board.get("release_version_format") != "x.y.z.w":
+        fail("active board profile must declare four-part OTA release versions")
     if fleet.get("rollout") not in {"all", "selected"}:
         fail("fleet rollout must be all or selected")
     if not isinstance(fleet.get("boards"), list) or not fleet["boards"]:

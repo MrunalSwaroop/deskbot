@@ -14,7 +14,7 @@ Do not create a nested repository.
 
 ## Versioning
 
-Use semantic versions. A patch is a correction, a minor version is a backward-compatible feature, and a major version changes pins, protocol, or storage. The workflow adds its run number to the patch component so every published image is newer.
+Use semantic versions. A patch is a correction, a minor version is a backward-compatible feature, and a major version changes pins, protocol, or storage. The workflow publishes the exact four-part value in `VERSION` (`x.y.z.w`). Increase the final component for each OTA release; do not use the GitHub Actions run number as the firmware version.
 
 ## Board enrollment
 
@@ -71,3 +71,6 @@ Never commit `ota_target.h`, Wi-Fi passwords, API keys, `.env` files, build fold
 [1]: https://docs.github.com/en/actions "GitHub Actions documentation"
 [2]: https://docs.github.com/en/pages "GitHub Pages documentation"
 [3]: https://wiki.seeedstudio.com/xiao_esp32s3_getting_started/ "Seeed Studio XIAO ESP32-S3 getting started guide"
+
+
+For the current v0.0.5.1 procedure, see [`docs/RELEASE_V0.0.5.1.md`](RELEASE_V0.0.5.1.md).

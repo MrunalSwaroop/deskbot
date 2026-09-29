@@ -33,20 +33,22 @@ bool validCredentials(const StoredCredentials& stored) {
   return stored.magic == kCredentialsMagic && stored.ssid[0] != '\0';
 }
 
-bool parseVersion(const char* text, int& major, int& minor, int& patch) {
-  return text != nullptr && sscanf(text, "%d.%d.%d", &major, &minor, &patch) == 3;
+bool parseVersion(const char* text, int& major, int& minor, int& patch, int& build) {
+  return text != nullptr && sscanf(text, "%d.%d.%d.%d", &major, &minor, &patch, &build) == 4;
 }
 
 bool isNewerVersion(const char* candidate, const char* current) {
   int candidateMajor = 0;
   int candidateMinor = 0;
   int candidatePatch = 0;
+  int candidateBuild = 0;
   int currentMajor = 0;
   int currentMinor = 0;
   int currentPatch = 0;
+  int currentBuild = 0;
 
-  if (!parseVersion(candidate, candidateMajor, candidateMinor, candidatePatch) ||
-      !parseVersion(current, currentMajor, currentMinor, currentPatch)) {
+  if (!parseVersion(candidate, candidateMajor, candidateMinor, candidatePatch, candidateBuild) ||
+      !parseVersion(current, currentMajor, currentMinor, currentPatch, currentBuild)) {
     return false;
   }
 
@@ -56,7 +58,10 @@ bool isNewerVersion(const char* candidate, const char* current) {
   if (candidateMinor != currentMinor) {
     return candidateMinor > currentMinor;
   }
-  return candidatePatch > currentPatch;
+  if (candidatePatch != currentPatch) {
+    return candidatePatch > currentPatch;
+  }
+  return candidateBuild > currentBuild;
 }
 
 String currentBoardId() {
@@ -101,8 +106,68 @@ String OtaService::boardId() const {
   return currentBoardId();
 }
 
+void OtaService::setUiCallback(OtaUiCallback callback) {
+  uiCallback_ = callback;
+}
+
+OtaState OtaService::state() const {
+  return state_;
+}
+
+const char *OtaService::stateName() const {
+  switch (state_) {
+    case OtaState::Disabled: return "disabled";
+    case OtaState::Idle: return "idle";
+    case OtaState::Checking: return "checking";
+    case OtaState::UpToDate: return "up_to_date";
+    case OtaState::UpdateAvailable: return "update_available";
+    case OtaState::Downloading: return "downloading";
+    case OtaState::Installing: return "installing";
+    case OtaState::Rebooting: return "rebooting";
+    case OtaState::NotSelected: return "not_selected";
+    case OtaState::Error: return "error";
+  }
+  return "unknown";
+}
+
+const char *OtaService::remoteVersion() const {
+  return remoteVersion_;
+}
+
+const char *OtaService::lastError() const {
+  return lastError_;
+}
+
+int OtaService::progress() const {
+  return progress_;
+}
+
+bool OtaService::updateAvailable() const {
+  return updateAvailable_;
+}
+
+void OtaService::setState(OtaState state, int progress) {
+  state_ = state;
+  if (progress >= 0) progress_ = constrain(progress, 0, 100);
+  Serial.print("OTA state: ");
+  Serial.print(stateName());
+  if (state_ == OtaState::Downloading || state_ == OtaState::Installing) {
+    Serial.print(" ");
+    Serial.print(progress_);
+    Serial.print("%");
+  }
+  Serial.println();
+  if (uiCallback_) uiCallback_(stateName(), progress_);
+}
+
+void OtaService::setError(const String &message) {
+  message.toCharArray(lastError_, sizeof(lastError_));
+  setState(OtaState::Error, 0);
+}
+
 void OtaService::begin() {
 #if !ROCKY_OTA_ENABLED
+  setState(OtaState::Disabled, 0);
   Serial.println("OTA bootstrap: disabled in this local USB build");
   return;
 #endif
@@ -483,27 +548,41 @@ void OtaService::tryRemoteUpdate() {
   Serial.println("OTA bootstrap: update accepted; board may reboot now");
 #elif defined(ARDUINO_ARCH_ESP32)
   otaChecked_ = true;
+  setState(OtaState::Checking, 0);
 
   char remoteVersion[24] = {};
   if (!fetchManifestVersion(remoteVersion, sizeof(remoteVersion), manifestAllowed_)) {
+    setError("manifest fetch failed");
+    return;
+  }
+  strncpy(remoteVersion_, remoteVersion, sizeof(remoteVersion_) - 1);
+  remoteVersion_[sizeof(remoteVersion_) - 1] = '\0';
+  manifestChecked_ = true;
+
+  if (!manifestAllowed_) {
+    setState(OtaState::NotSelected, 0);
     return;
   }
 
-  if (!manifestAllowed_) return;
-
   if (!isNewerVersion(remoteVersion, APP_VERSION)) {
+    updateAvailable_ = false;
+    setState(OtaState::UpToDate, 100);
     Serial.print("OTA bootstrap: already running version ");
     Serial.println(APP_VERSION);
     return;
   }
 
+  updateAvailable_ = true;
+  setState(OtaState::UpdateAvailable, 0);
+
   if (OTA_UPDATE_URL[0] == '\0') {
-    Serial.println("OTA bootstrap: no ESP32 update package configured");
+    setError("update package URL missing");
     return;
   }
 
   Serial.print("OTA bootstrap: downloading XIAO firmware version ");
   Serial.println(remoteVersion);
+  setState(OtaState::Downloading, 0);
 
   NetworkClientSecure client;
   client.setHandshakeTimeout(30);
@@ -513,13 +592,30 @@ void OtaService::tryRemoteUpdate() {
   HTTPUpdate updater(120000);
   updater.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
   updater.rebootOnUpdate(true);
+  updater.onStart([this]() {
+    setState(OtaState::Downloading, 0);
+  });
+  updater.onProgress([this](int current, int total) {
+    const int percent = total > 0 ? (current * 100) / total : 0;
+    setState(OtaState::Downloading, percent);
+  });
+  updater.onEnd([this]() {
+    setState(OtaState::Installing, 100);
+  });
+  updater.onError([this](int error) {
+    setError(String("HTTPUpdate error ") + error);
+  });
 
   const t_httpUpdate_return result = updater.update(client, OTA_UPDATE_URL, APP_VERSION);
   if (result == HTTP_UPDATE_OK) {
+    setState(OtaState::Rebooting, 100);
     Serial.println("OTA bootstrap: XIAO update accepted; board will reboot");
   } else if (result == HTTP_UPDATE_NO_UPDATES) {
+    updateAvailable_ = false;
+    setState(OtaState::UpToDate, 100);
     Serial.println("OTA bootstrap: XIAO server reported no update");
   } else {
+    setError(updater.getLastErrorString());
     Serial.print("OTA bootstrap: XIAO update failed: ");
     Serial.println(updater.getLastErrorString());
   }
