@@ -103,7 +103,7 @@ The status API reports a unique board identity and OTA state such as:
 ```json
 {
   "boardId": "XIAO-ABCDEF012345",
-  "firmware": "0.0.5.1",
+  "firmware": "0.0.5.2",
   "otaConfigured": true,
   "otaState": "up_to_date",
   "otaProgress": 100,
@@ -320,4 +320,29 @@ oled invert toggle
 
 The dashboard exposes the same controls. The OTA-capable image reports `checking`, `update_available`, `downloading`, `installing`, `rebooting`, `up_to_date`, or `error` through Serial, the OLED progress screen, the dashboard banner, and `/api/status`.
 
-Follow [`../../docs/RELEASE_V0.0.5.1.md`](../../docs/RELEASE_V0.0.5.1.md) for the exact commit, push, and cable-free update sequence.
+Follow [`../../docs/RELEASE_V0.0.5.2.md`](../../docs/RELEASE_V0.0.5.2.md) for the exact commit, push, cable-free update, microphone loopback, volume, and wake-name test sequence.
+
+
+## v0.0.5.2 microphone and speaker test
+
+This release has two separate microphone modes:
+
+- `mic monitor` — measures the onboard PDM microphone and displays a smoothed level; it does not play audio.
+- `mic loopback 60` — routes microphone PCM to the MAX98357A for 60 seconds. Start with the software volume at 20%.
+
+Commands:
+
+```text
+audio volume 20
+test mic
+mic loopback 60
+audio stop
+mic off
+status
+```
+
+The dashboard has the same controls. The OLED shows a small microphone meter while monitoring and a loopback marker while audio is being routed. Volume is software scaling, not a replacement for a physical amplifier gain control. Keep the speaker connected only between `SPK+` and `SPK-`; never connect either speaker output to ground.
+
+### Wake-name boundary
+
+`wake name rocky`, `wake on`, `wake off`, and `wake simulate` test the engagement path. The v0.0.5.2 loopback path cannot identify spoken words by itself; a raw amplitude meter can tell that sound exists but cannot tell whether the word was “Rocky”. A later local wake-word engine or Xiaozhi/relay adapter must call the same engagement function after actual recognition.

@@ -29,7 +29,9 @@ REQUIRED = [
     Path("firmware/xiao_esp32s3_sense/secrets.h.example"),
     Path("hardware/wiring/complete_wiring.mmd"),
     Path("CHANGE_SUMMARY.md"),
-    Path("docs/RELEASE_V0.0.5.1.md"),
+    Path("docs/RELEASE_V0.0.5.2.md"),
+    Path("modules/audio/mic_loopback.h"),
+    Path("modules/voice/wake_name.h"),
 ]
 
 

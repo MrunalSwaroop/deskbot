@@ -6,6 +6,23 @@ This file is included in every ZIP release. It records the requirements addresse
 
 2026-09-27
 
+### Deskbot v0.0.5.2 — microphone loopback, speaker volume, OLED meter, and wake-name boundary
+
+**Requirement:** Starting from the verified v0.0.5.1 OTA image, test the Sense microphone by hearing it through the MAX98357A speaker, control speaker volume, show microphone activity on the OLED, prepare name-based engagement, and establish modular boundaries for future LLM, Xiaozhi, personality, and camera-follow work.
+
+**Changes made:**
+
+- Added bounded `mic loopback [seconds]` and changed `test mic` to route microphone PCM to the speaker for a timed test.
+- Added persistent software volume control with `audio volume 0..100`; the safe default is 20%.
+- Added microphone loopback and speaker-volume fields to `/api/status` and dashboard controls.
+- Added a small OLED microphone activity meter and loopback marker.
+- Added configurable wake-name policy commands: `wake name <name>`, `wake on/off`, and `wake simulate`.
+- Kept actual spoken-name recognition explicitly deferred: amplitude measurement cannot recognize words.
+- Added replaceable `mic_loopback.h`, `wake_name.h`, and the voice/LLM/vision roadmap.
+- Preserved the existing pin map, camera feature, personalities, motors, servo, OTA, and USB recovery path.
+
+**Verification target:** release checker passes; USB and OTA-enabled builds compile with the verified XIAO settings; dashboard JavaScript parses; publish manifest reports `0.0.5.2`; after OTA, test `audio volume 20`, `test mic`, `mic off`, and `wake simulate`.
+
 ### Deskbot v0.0.5.1 — OLED inversion and visible OTA state
 
 **Requirement:** Starting from the saved and tagged v0.0.4 OTA-stable baseline, allow the OLED background/palette to be inverted without USB and make remote OTA availability, progress, and errors visible while preserving the modular architecture.

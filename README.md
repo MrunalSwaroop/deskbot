@@ -12,7 +12,7 @@ The running OTA-stable baseline is **v0.0.4**. This release adds the first exact
 
 ## What this release provides
 
-The current XIAO firmware drives the OLED face, pan servo, two-channel DRV8833 with two N90 motors, Sense camera, onboard PDM microphone monitor, MAX98357A I2S tone output, Wi-Fi provisioning, local dashboard, personalities, face states, head-state behavior, dance, and manifest-based OTA.
+The current XIAO firmware drives the OLED face, pan servo, two-channel DRV8833 with two N90 motors, Sense camera, onboard PDM microphone monitor, MAX98357A I2S tone and microphone loopback output, Wi-Fi provisioning, local dashboard, personalities, face states, head-state behavior, dance, and manifest-based OTA.
 
 The repository is organized so that character art, personality behavior, motion, audio, voice, camera, sensing, networking, board profiles, and OTA policy can be added or removed without scattering hardware assumptions across the project.
 
@@ -65,7 +65,7 @@ Keep the motor supply disconnected and the robot lifted during the first hardwar
 
 If Wi-Fi has not been configured, the board starts `Rocky-XIAO-Setup` and prints `DASHBOARD: http://192.168.4.1`. Save a 2.4 GHz network, reconnect to it, and open the exact `DASHBOARD: http://...` address printed by Serial Monitor. Never use `0.0.0.0` as the browser address.
 
-The dashboard provides face and personality buttons, pan servo, individual motor tests and inversion, dance control, camera snapshot/live preview, microphone monitoring, MAX98357A tone testing, status, Wi-Fi configuration, and **Restart and check OTA**. It is intentionally local and must not be port-forwarded to the public internet.
+The dashboard provides face and personality buttons, pan servo, individual motor tests and inversion, dance control, camera snapshot/live preview, microphone-to-speaker loopback, software speaker volume, wake-name test controls, MAX98357A tone testing, status, Wi-Fi configuration, and **Restart and check OTA**. It is intentionally local and must not be port-forwarded to the public internet.
 
 ## Modularity rules
 
@@ -142,4 +142,4 @@ Every release updates [`CHANGE_SUMMARY.md`](CHANGE_SUMMARY.md) with the requirem
 [4]: https://www.ti.com/product/DRV8833 "Texas Instruments DRV8833 product page"
 
 
-For the exact v0.0.5.1 commit, push, OTA verification, and OLED inversion checklist, read [`docs/RELEASE_V0.0.5.1.md`](docs/RELEASE_V0.0.5.1.md).
+For the exact v0.0.5.2 commit, push, OTA verification, microphone loopback, volume, and wake-name test checklist, read [`docs/RELEASE_V0.0.5.2.md`](docs/RELEASE_V0.0.5.2.md).

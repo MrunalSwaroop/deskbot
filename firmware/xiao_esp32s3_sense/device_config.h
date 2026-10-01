@@ -20,7 +20,7 @@
 #endif
 
 #ifndef APP_VERSION
-#define APP_VERSION "0.0.5.1-base"
+#define APP_VERSION "0.0.5.2-base"
 #endif
 
 #ifndef BLINK_INTERVAL_MS

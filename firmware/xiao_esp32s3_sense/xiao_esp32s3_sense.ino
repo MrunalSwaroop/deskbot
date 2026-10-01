@@ -13,6 +13,8 @@
 #include "ota_service.h"
 #include "../../modules/core/face_state.h"
 #include "../../modules/core/personality.h"
+#include "../../modules/audio/mic_loopback.h"
+#include "../../modules/voice/wake_name.h"
 
 /*
   Rocky XIAO Desk Buddy - modular Stage 2 bring-up
@@ -70,6 +72,7 @@ bool cameraReady = false;
 bool cameraBusy = false;
 bool microphoneReady = false;
 bool microphoneMonitor = false;
+bool microphoneLoopback = false;
 bool audioReady = false;
 bool audioToneActive = false;
 bool headFollowsState = true;
@@ -82,9 +85,15 @@ bool rockyCharacterStateOverride = false;
 bool leftMotorInvert = ROCKY_LEFT_MOTOR_INVERT;
 bool rightMotorInvert = ROCKY_RIGHT_MOTOR_INVERT;
 unsigned long microphoneMonitorUntil = 0;
+unsigned long microphoneLoopbackUntil = 0;
 unsigned long lastMicRead = 0;
 unsigned long lastMicPrint = 0;
 int microphoneLevel = 0;
+int speakerVolume = 20;
+String wakeName = "rocky";
+bool wakeNameEnabled = true;
+bool wakeNameEngaged = false;
+unsigned long wakeEngagedUntil = 0;
 unsigned long audioToneUntil = 0;
 uint32_t audioTonePhase = 0;
 uint32_t audioTonePhaseStep = 0;
@@ -107,6 +116,11 @@ void drawPersonalityAccent();
 void updateIsabellaMood();
 void updateMicrophone();
 void updateAudioTone();
+void startMicLoopback(uint32_t durationMs);
+void stopMicLoopback(const String &reason);
+void setSpeakerVolume(int percent);
+void engageWakeName(const String &source);
+void drawMicIndicator();
 void updateDance();
 void applyStateHeadPose();
 void startDance();
@@ -190,6 +204,10 @@ void setup() {
   leftMotorInvert = preferences.getBool("leftInv", ROCKY_LEFT_MOTOR_INVERT);
   rightMotorInvert = preferences.getBool("rightInv", ROCKY_RIGHT_MOTOR_INVERT);
   oledInverted = preferences.getBool("oledInv", false);
+  speakerVolume = constrain((int)preferences.getUChar("spkVol", 20), 0, 100);
+  wakeName = preferences.getString("wakeName", "rocky");
+  if (wakeName.length() == 0) wakeName = "rocky";
+  wakeNameEnabled = preferences.getBool("wakeEnabled", true);
   display.invertDisplay(oledInverted);
 
   setupRoutes();
@@ -214,7 +232,9 @@ void setup() {
   Serial.println("          spartan guard/command/salute/listening/thinking/laughing/march/attack/victory/sleeping");
   Serial.println("          pan 0..180, head auto/on/off, motor forward/back/left/right/test/stop");
   Serial.println("          motor speed 0..255, motor invert left/right on/off, dance start/stop, mic monitor");
-  Serial.println("          audio tone [Hz] [ms], audio stop");
+  Serial.println("          audio tone [Hz] [ms], audio volume 0..100, audio stop");
+  Serial.println("          mic loopback [seconds], mic monitor, mic off");
+  Serial.println("          wake name <name>, wake on/off, wake simulate");
   Serial.println("          oled invert on/off/toggle");
 }
 
@@ -230,6 +250,10 @@ void loop() {
   if (personality == PERSONALITY_ISABELLA) updateIsabellaMood();
   updateMicrophone();
   updateAudioTone();
+  if (wakeNameEngaged && millis() >= wakeEngagedUntil) {
+    wakeNameEngaged = false;
+    if (!microphoneLoopback && faceMode == FACE_LISTENING) setFace(FACE_IDLE, "Wake interaction timeout");
+  }
   updateDance();
 
   if (millis() - lastFaceFrame >= ROCKY_FACE_FRAME_MS) {
@@ -265,7 +289,9 @@ void processSerialCommand(const String &command) {
     Serial.println("motor forward|back|left|right|test|stop");
     Serial.println("motor speed 0..255");
     Serial.println("motor invert left/right on/off | head auto/on/off | dance start/stop | mic monitor");
+    Serial.println("mic loopback [seconds] | mic off | audio volume 0..100");
     Serial.println("audio tone [Hz] [ms] | audio stop");
+    Serial.println("wake name <name> | wake on/off | wake simulate");
     Serial.println("restart (reboot and check OTA manifest)");
     Serial.println("status");
     return;
@@ -396,6 +422,50 @@ void processSerialCommand(const String &command) {
     else Serial.println("Use: oled invert on/off/toggle");
     return;
   }
+  if (lower.startsWith("wake name ")) {
+    String value = command.substring(10);
+    value.trim();
+    if (value.length() < 2 || value.length() > 20) {
+      Serial.println("Wake name must be 2..20 characters");
+    } else {
+      wakeName = value;
+      preferences.putString("wakeName", wakeName);
+      lastEvent = "Wake name set: " + wakeName;
+      Serial.println(lastEvent);
+    }
+    return;
+  }
+  if (lower == "wake on" || lower == "wake enable") {
+    wakeNameEnabled = true;
+    preferences.putBool("wakeEnabled", true);
+    lastEvent = "Wake name enabled: " + wakeName;
+    Serial.println(lastEvent);
+    return;
+  }
+  if (lower == "wake off" || lower == "wake disable") {
+    wakeNameEnabled = false;
+    preferences.putBool("wakeEnabled", false);
+    lastEvent = "Wake name disabled";
+    Serial.println(lastEvent);
+    return;
+  }
+  if (lower == "wake simulate" || lower == "engage") {
+    engageWakeName("manual test");
+    return;
+  }
+  if (lower.startsWith("audio volume ")) {
+    setSpeakerVolume(constrain(lower.substring(13).toInt(), 0, 100));
+    return;
+  }
+  if (lower.startsWith("mic loopback")) {
+    String args = lower.substring(12);
+    args.trim();
+    int seconds = args.length() ? args.toInt() : 60;
+    if (seconds <= 0) seconds = 60;
+    startMicLoopback(constrain(seconds, 1, 300) * 1000UL);
+    return;
+  }
+
   if (lower.startsWith("pan ")) {
     setPan(constrain(lower.substring(4).toInt(), ROCKY_SERVO_MIN_ANGLE, ROCKY_SERVO_MAX_ANGLE));
     return;
@@ -455,12 +525,14 @@ void processSerialCommand(const String &command) {
   }
   if (lower == "mic monitor" || lower == "mic on") {
     microphoneMonitor = true;
+    microphoneLoopback = false;
     microphoneMonitorUntil = millis() + 60000UL;
     setFace(FACE_LISTENING, "Microphone monitor");
-    Serial.println("Microphone monitor active for 60 seconds");
+    Serial.println("Microphone level monitor active for 60 seconds; no speaker output");
     return;
   }
   if (lower == "mic off") {
+    stopMicLoopback("Microphone off");
     microphoneMonitor = false;
     microphoneLevel = 0;
     setFace(FACE_IDLE, "Microphone monitor off");
@@ -542,10 +614,8 @@ void runTest(const String &name) {
       Serial.println("MIC ERROR: microphone is not initialized");
       return;
     }
-    microphoneMonitor = true;
-    microphoneMonitorUntil = millis() + 60000UL;
-    setFace(FACE_LISTENING, "Microphone test");
-    Serial.println("MIC TEST: speak near the Sense microphone for 60 seconds");
+    startMicLoopback(60000UL);
+    Serial.println("MIC TEST: speak near the Sense microphone; audio is routed to the speaker for 60 seconds");
     return;
   }
   if (name == "audio") {
@@ -822,7 +892,8 @@ String microphoneStatusName() {
 }
 
 bool initAudio() {
-  // Use I2S controller 1 so the Sense PDM microphone can keep its RX channel.
+  // ESP32 Arduino allocates an available I2S channel for this second I2SClass.
+  // The PDM RX microphone and standard TX amplifier remain separate objects.
   audioOutput.setPins(ROCKY_AUDIO_BCLK, ROCKY_AUDIO_LRCK, ROCKY_AUDIO_DATA);
   if (!audioOutput.begin(I2S_MODE_STD, 16000, I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO)) {
     Serial.println("AUDIO ERROR: MAX98357A I2S initialization failed");
@@ -834,6 +905,7 @@ bool initAudio() {
 
 String audioStatusName() {
   if (!audioReady) return "not_ready";
+  if (microphoneLoopback) return "mic_loopback";
   return audioToneActive ? "tone" : "ready";
 }
 
@@ -858,6 +930,11 @@ void startAudioTone(int frequency, uint32_t durationMs) {
 void stopAudio(const String &reason) {
   audioToneActive = false;
   audioToneUntil = 0;
+  if (microphoneLoopback) {
+    microphoneLoopback = false;
+    microphoneMonitor = false;
+    microphoneLoopbackUntil = 0;
+  }
   lastEvent = reason;
   if (faceMode == FACE_SPEAKING) setFace(FACE_IDLE, reason);
   else Serial.println(reason);
@@ -872,7 +949,8 @@ void updateAudioTone() {
 
   int16_t stereoSamples[64 * 2];
   for (size_t i = 0; i < 64; ++i) {
-    const int16_t sample = (audioTonePhase & 0x80000000UL) ? 1800 : -1800;
+    const int32_t raw = (audioTonePhase & 0x80000000UL) ? 1800 : -1800;
+    const int16_t sample = static_cast<int16_t>((raw * speakerVolume) / 100);
     stereoSamples[i * 2] = sample;
     stereoSamples[i * 2 + 1] = sample;
     audioTonePhase += audioTonePhaseStep;
@@ -881,14 +959,20 @@ void updateAudioTone() {
 }
 
 void updateMicrophone() {
-  if (!microphoneReady || !microphoneMonitor) return;
-  if (millis() >= microphoneMonitorUntil) {
+  if (!microphoneReady || (!microphoneMonitor && !microphoneLoopback)) return;
+  if (millis() >= microphoneMonitorUntil && microphoneMonitor) {
     microphoneMonitor = false;
-    microphoneLevel = 0;
-    setFace(FACE_IDLE, "Microphone monitor complete");
+    if (!microphoneLoopback) {
+      microphoneLevel = 0;
+      setFace(FACE_IDLE, "Microphone monitor complete");
+      return;
+    }
+  }
+  if (millis() >= microphoneLoopbackUntil && microphoneLoopback) {
+    stopMicLoopback("Microphone loopback complete");
     return;
   }
-  if (millis() - lastMicRead < 40 || microphone.available() <= 0) return;
+  if (millis() - lastMicRead < 20 || microphone.available() <= 0) return;
   lastMicRead = millis();
 
   int16_t samples[256];
@@ -903,19 +987,78 @@ void updateMicrophone() {
     total += (uint32_t)sample;
   }
   uint32_t average = total / count;
-  // The onboard PDM mic has a small idle noise floor. Remove it first, then
-  // smooth the meter so the dashboard shows voice/activity rather than raw
-  // sample-to-sample jitter. This is an amplitude meter, not speech-to-text.
   const uint32_t noiseFloor = 180;
   uint32_t aboveFloor = average > noiseFloor ? average - noiseFloor : 0;
   int rawLevel = constrain((int)(aboveFloor / 110), 0, 99);
   static int smoothedLevel = 0;
   smoothedLevel = (smoothedLevel * 7 + rawLevel * 3) / 10;
   microphoneLevel = smoothedLevel < 2 ? 0 : smoothedLevel;
+
+  if (microphoneLoopback && audioReady && speakerVolume > 0) {
+    int16_t stereoSamples[256 * 2];
+    for (size_t i = 0; i < count; ++i) {
+      int32_t scaled = ((int32_t)samples[i] * speakerVolume) / 100;
+      scaled = constrain(scaled, -32768L, 32767L);
+      stereoSamples[i * 2] = (int16_t)scaled;
+      stereoSamples[i * 2 + 1] = (int16_t)scaled;
+    }
+    audioOutput.write(reinterpret_cast<const uint8_t *>(stereoSamples), count * 2 * sizeof(int16_t));
+  }
+
   if (millis() - lastMicPrint >= 250) {
     lastMicPrint = millis();
-    Serial.print("MIC level: "); Serial.println(microphoneLevel);
+    Serial.print("MIC level: "); Serial.print(microphoneLevel);
+    if (microphoneLoopback) {
+      Serial.print(" | loopback volume: "); Serial.print(speakerVolume); Serial.println("%");
+    } else {
+      Serial.println();
+    }
   }
+}
+
+void startMicLoopback(uint32_t durationMs) {
+  if (!microphoneReady || !audioReady) {
+    Serial.println("MIC LOOPBACK ERROR: microphone and audio must both be ready");
+    return;
+  }
+  audioToneActive = false;
+  microphoneMonitor = true;
+  microphoneLoopback = true;
+  microphoneMonitorUntil = millis() + durationMs;
+  microphoneLoopbackUntil = millis() + durationMs;
+  wakeNameEngaged = false;
+  setFace(FACE_LISTENING, "Microphone to speaker loopback");
+  Serial.print("MIC LOOPBACK: active for "); Serial.print(durationMs / 1000UL);
+  Serial.print(" seconds at volume "); Serial.print(speakerVolume); Serial.println("%");
+}
+
+void stopMicLoopback(const String &reason) {
+  microphoneLoopback = false;
+  microphoneMonitor = false;
+  microphoneLoopbackUntil = 0;
+  microphoneMonitorUntil = 0;
+  microphoneLevel = 0;
+  if (faceMode == FACE_LISTENING) setFace(FACE_IDLE, reason);
+  else Serial.println(reason);
+}
+
+void setSpeakerVolume(int percent) {
+  speakerVolume = constrain(percent, 0, 100);
+  preferences.putUChar("spkVol", (uint8_t)speakerVolume);
+  lastEvent = "Speaker volume " + String(speakerVolume) + "%";
+  Serial.println(lastEvent);
+}
+
+void engageWakeName(const String &source) {
+  if (!wakeNameEnabled) {
+    Serial.println("Wake name is disabled");
+    return;
+  }
+  wakeNameEngaged = true;
+  wakeEngagedUntil = millis() + 10000UL;
+  setFace(FACE_LISTENING, "Wake name engaged: " + wakeName);
+  startAudioTone(880, 100);
+  Serial.print("WAKE: "); Serial.print(wakeName); Serial.print(" recognized via "); Serial.println(source);
 }
 
 void applyStateHeadPose() {
@@ -1077,7 +1220,7 @@ void setupRoutes() {
 void handleRoot() {
   String html = pageHeader("Rocky XIAO Desk Buddy");
   html += "<h1>Rocky XIAO Desk Buddy</h1>";
-  html += "<p class='muted'>Modular XIAO bring-up: OLED, servo, DRV8833, Wi-Fi</p>";
+  html += "<p class='muted'>Modular XIAO bring-up: OLED, servo, DRV8833, microphone, speaker, Wi-Fi</p>";
   html += "<section><h2>Status</h2><pre id='status'>Loading...</pre><button onclick='refreshStatus()'>Refresh</button></section>";
   html += "<section><h2>Face states</h2>";
   const char *faces[] = {"idle", "listening", "thinking", "speaking", "working", "happy", "laugh", "curious", "sad", "surprised", "error", "sleep"};
@@ -1101,7 +1244,8 @@ void handleRoot() {
   html += "<button onclick=\"cmd('motor left')\">Left</button><button onclick=\"cmd('motor right')\">Right</button>";
   html += "<button class='stop' onclick=\"cmd('motor stop')\">STOP</button>";
   html += "<input id='speed' type='number' min='0' max='255' value='100'><button onclick=\"cmd('motor speed '+document.getElementById('speed').value)\">Set speed</button><br><button onclick=\"cmd('motor invert left on')\">Left invert ON</button><button onclick=\"cmd('motor invert left off')\">Left invert OFF</button><button onclick=\"cmd('motor invert right on')\">Right invert ON</button><button onclick=\"cmd('motor invert right off')\">Right invert OFF</button></section>";
-  html += "<section><h2>Single-function tests</h2><button onclick=\"cmd('test oled')\">Test OLED</button><button onclick=\"cmd('test servo')\">Test servo</button><button onclick=\"cmd('test left')\">Test left motor</button><button onclick=\"cmd('test right')\">Test right motor</button><button onclick=\"cmd('test motor')\">Test motors</button><button onclick=\"cmd('test wifi')\">Test Wi-Fi</button><button onclick=\"cmd('test mic')\">Test microphone</button><button onclick=\"cmd('mic off')\">Stop mic</button><button onclick=\"cmd('test audio')\">Test audio tone</button><button class='stop' onclick=\"cmd('audio stop')\">Stop audio</button></section>";
+  html += "<section><h2>Single-function tests</h2><button onclick=\"cmd('test oled')\">Test OLED</button><button onclick=\"cmd('test servo')\">Test servo</button><button onclick=\"cmd('test left')\">Test left motor</button><button onclick=\"cmd('test right')\">Test right motor</button><button onclick=\"cmd('test motor')\">Test motors</button><button onclick=\"cmd('test wifi')\">Test Wi-Fi</button><button onclick=\"cmd('test mic')\">Mic to speaker</button><button onclick=\"cmd('mic monitor')\">Mic meter only</button><button onclick=\"cmd('mic off')\">Stop mic</button><button onclick=\"cmd('test audio')\">Test audio tone</button><button class='stop' onclick=\"cmd('audio stop')\">Stop audio</button></section>";
+  html += "<section><h2>Microphone, speaker, and wake name</h2><p class='muted'>Loopback routes the onboard Sense microphone to the MAX98357A speaker. Volume is software-scaled and stored on the board. This release includes a manual wake test; actual spoken-name recognition requires a later wake-word engine.</p><input id='volume' type='number' min='0' max='100' value='20'><button onclick=\"cmd('audio volume '+document.getElementById('volume').value)\">Set volume %</button><button onclick=\"cmd('mic loopback 60')\">Loopback 60 s</button><button class='stop' onclick=\"cmd('mic off')\">Stop loopback</button><br><input id='wakeName' value='rocky' maxlength='20'><button onclick=\"cmd('wake name '+document.getElementById('wakeName').value)\">Set wake name</button><button onclick=\"cmd('wake on')\">Wake ON</button><button onclick=\"cmd('wake off')\">Wake OFF</button><button onclick=\"cmd('wake simulate')\">Simulate wake</button></section>";
   html += "<section><h2>Camera</h2><p class='muted'>Snapshot or low-rate live preview. Live mode refreshes JPEG frames without blocking the rest of the robot.</p><img id='camera' style='width:100%;max-width:640px;border-radius:10px;background:#080a0e' alt='Camera preview'><br><button onclick='refreshCamera()'>Snapshot</button><a class='button' href='/camera/live' target='_blank'>Live mode</a><a class='button' href='/camera.jpg' target='_blank'>Open JPEG</a></section>";
   html += "<section><h2>Firmware and OTA</h2><div id='otaBanner' class='ota idle'>OTA status: loading</div><pre id='ota'>Loading...</pre><button onclick=\"cmd('restart')\">Restart and check OTA</button><p class='muted'>After GitHub Actions publishes a newer version, this button reboots the board. The OLED and Serial Monitor show checking, downloading, progress, and rebooting.</p></section>";
   html += "<section><h2>Network</h2><a class='button' href='/wifi'>Configure Wi-Fi</a></section>";
@@ -1128,6 +1272,11 @@ void handleStatus() {
   json += "\"camera\":\"" + cameraStatusName() + "\",";
   json += "\"microphone\":\"" + microphoneStatusName() + "\",";
   json += "\"micLevel\":" + String(microphoneLevel) + ",";
+  json += "\"micLoopback\":" + String(microphoneLoopback ? "true" : "false") + ",";
+  json += "\"speakerVolume\":" + String(speakerVolume) + ",";
+  json += "\"wakeName\":\"" + htmlEscape(wakeName) + "\",";
+  json += "\"wakeEnabled\":" + String(wakeNameEnabled ? "true" : "false") + ",";
+  json += "\"wakeEngaged\":" + String(wakeNameEngaged ? "true" : "false") + ",";
   json += "\"audio\":\"" + audioStatusName() + "\",";
   json += "\"headFollowsState\":" + String(headFollowsState ? "true" : "false") + ",";
   json += "\"dance\":" + String(danceActive ? "true" : "false") + ",";
@@ -1327,11 +1476,13 @@ void drawFace() {
   // character renderers; the other personalities keep the bring-up renderer.
   if (drawImportedCharacter()) {
     drawWiFiIndicator();
+    drawMicIndicator();
     display.display();
     return;
   }
 
   drawWiFiIndicator();
+  drawMicIndicator();
 
   if (faceMode == FACE_SLEEP) {
     display.setTextSize(2);
@@ -1509,6 +1660,14 @@ void drawMouth() {
   } else {
     display.drawLine(55, y + 2, 73, y + 2, SSD1306_WHITE);
   }
+}
+
+void drawMicIndicator() {
+  if (!microphoneMonitor && !microphoneLoopback) return;
+  display.drawRect(2, 2, 30, 6, SSD1306_WHITE);
+  int width = constrain((microphoneLevel * 26) / 99, 0, 26);
+  if (width > 0) display.fillRect(4, 4, width, 2, SSD1306_WHITE);
+  if (microphoneLoopback) display.drawCircle(37, 5, 3, SSD1306_WHITE);
 }
 
 void drawWiFiIndicator() {
