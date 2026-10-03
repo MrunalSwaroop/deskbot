@@ -20,7 +20,7 @@
 #endif
 
 #ifndef APP_VERSION
-#define APP_VERSION "0.0.5.2-base"
+#define APP_VERSION "0.0.5.3-base"
 #endif
 
 #ifndef BLINK_INTERVAL_MS
@@ -50,6 +50,9 @@
 #endif
 #ifndef OTA_TARGET_VERSION
 #define OTA_TARGET_VERSION ""
+#endif
+#ifndef OTA_CATALOG_URL
+#define OTA_CATALOG_URL ""
 #endif
 
 #ifndef WIFI_FIRMWARE_LATEST_VERSION

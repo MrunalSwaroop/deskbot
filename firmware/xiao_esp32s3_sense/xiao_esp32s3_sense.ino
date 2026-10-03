@@ -15,6 +15,9 @@
 #include "../../modules/core/personality.h"
 #include "../../modules/audio/mic_loopback.h"
 #include "../../modules/voice/wake_name.h"
+#include "../../modules/network/wifi_profiles.h"
+#include "../../modules/ota/version_catalog.h"
+#include "../../modules/core/release_notes.h"
 
 /*
   Rocky XIAO Desk Buddy - modular Stage 2 bring-up
@@ -59,9 +62,16 @@ String lastEvent = "Booting";
 String lastCommand = "none";
 String savedSsid;
 String savedPassword;
+String savedSsid2;
+String savedPassword2;
+WifiProfile wifiProfiles[2];
+int activeWifiIndex = -1;
 
 bool provisioningAP = false;
 unsigned long lastWiFiAttempt = 0;
+unsigned long wifiUnavailableSince = 0;
+unsigned long apStartedAt = 0;
+const unsigned long WIFI_FALLBACK_AP_AFTER_MS = 300000UL;
 unsigned long lastMotorCommand = 0;
 unsigned long lastFaceFrame = 0;
 unsigned long faceFrame = 0;
@@ -136,12 +146,16 @@ void driveMotors(const String &direction, int speed, uint32_t durationMs);
 void setMotorChannel(int in1, int in2, int signedPwm, bool invert);
 void startAccessPoint();
 void connectStoredWiFi();
+bool tryWiFiProfiles();
 void maintainWiFi();
 void setupRoutes();
 void handleRoot();
 void handleHealth();
 void handleStatus();
+void handleChanges();
 void handleCommand();
+void handleOledSvg();
+void handleOtaCatalog();
 void handleCameraJpg();
 void handleCameraLive();
 void handleWiFiForm();
@@ -201,6 +215,10 @@ void setup() {
   preferences.begin("rocky-xiao", false);
   savedSsid = preferences.getString("ssid", "");
   savedPassword = preferences.getString("pass", "");
+  savedSsid2 = preferences.getString("ssid2", "");
+  savedPassword2 = preferences.getString("pass2", "");
+  wifiProfiles[0] = {savedSsid, savedPassword};
+  wifiProfiles[1] = {savedSsid2, savedPassword2};
   leftMotorInvert = preferences.getBool("leftInv", ROCKY_LEFT_MOTOR_INVERT);
   rightMotorInvert = preferences.getBool("rightInv", ROCKY_RIGHT_MOTOR_INVERT);
   oledInverted = preferences.getBool("oledInv", false);
@@ -236,6 +254,8 @@ void setup() {
   Serial.println("          mic loopback [seconds], mic monitor, mic off");
   Serial.println("          wake name <name>, wake on/off, wake simulate");
   Serial.println("          oled invert on/off/toggle");
+  Serial.println("          wifi profiles: two saved 2.4 GHz networks; AP fallback after 5 minutes");
+  Serial.println("          ota latest | ota target <version> | ota clear");
 }
 
 void loop() {
@@ -409,6 +429,24 @@ void processSerialCommand(const String &command) {
       drawFace();
     } else {
       printSpartanHelp();
+    }
+    return;
+  }
+
+  if (lower == "ota latest" || lower == "ota clear") {
+    otaService.clearTargetVersion();
+    lastEvent = "OTA target cleared; latest release selected";
+    Serial.println(lastEvent);
+    return;
+  }
+  if (lower.startsWith("ota target ")) {
+    String target = lower.substring(11);
+    target.trim();
+    if (otaService.setTargetVersion(target)) {
+      lastEvent = "OTA target selected: " + target;
+      Serial.println(lastEvent);
+    } else {
+      Serial.println("OTA target must use a four-part version such as 0.0.5.2");
     }
     return;
   }
@@ -818,38 +856,65 @@ void stopMotors(const String &reason) {
 
 // ------------------------------ Wi-Fi layer ------------------------------
 
-void connectStoredWiFi() {
-  if (savedSsid.length() == 0) {
-    startAccessPoint();
-    return;
+bool tryWiFiProfiles() {
+  if (!wifiProfileConfigured(wifiProfiles[0]) && !wifiProfileConfigured(wifiProfiles[1])) {
+    return false;
   }
 
   provisioningAP = false;
   WiFi.mode(WIFI_STA);
   WiFi.setHostname("deskbot-xiao");
-  WiFi.begin(savedSsid.c_str(), savedPassword.c_str());
-  Serial.print("Connecting to Wi-Fi: "); Serial.println(savedSsid);
 
-  unsigned long started = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - started < 12000) {
-    delay(250);
-    Serial.print(".");
+  for (int index = 0; index < 2; ++index) {
+    if (!wifiProfileConfigured(wifiProfiles[index])) continue;
+    activeWifiIndex = index;
+    Serial.print("Connecting to Wi-Fi profile ");
+    Serial.print(index + 1);
+    Serial.print(": ");
+    Serial.println(wifiProfiles[index].ssid);
+    WiFi.disconnect();
+    delay(100);
+    WiFi.begin(wifiProfiles[index].ssid.c_str(), wifiProfiles[index].password.c_str());
+
+    const unsigned long started = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - started < 8000UL) {
+      delay(250);
+      Serial.print(".");
+    }
+    Serial.println();
+    if (WiFi.status() == WL_CONNECTED) {
+      wifiUnavailableSince = 0;
+      Serial.print("WIFI OK profile "); Serial.print(index + 1); Serial.print(" IP: "); Serial.println(WiFi.localIP());
+      Serial.print("DASHBOARD: http://"); Serial.println(WiFi.localIP());
+      Serial.println("Open that URL from a phone/computer on the same 2.4 GHz Wi-Fi.");
+      lastEvent = "Wi-Fi connected: profile " + String(index + 1);
+      return true;
+    }
   }
-  Serial.println();
 
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.print("WIFI OK IP: "); Serial.println(WiFi.localIP());
-    Serial.print("DASHBOARD: http://"); Serial.println(WiFi.localIP());
-    Serial.println("Open that URL from a phone/computer on the same 2.4 GHz Wi-Fi.");
-    lastEvent = "Wi-Fi connected";
-  } else {
-    Serial.println("Wi-Fi failed; starting setup AP");
+  if (wifiUnavailableSince == 0) wifiUnavailableSince = millis();
+  activeWifiIndex = -1;
+  Serial.println("No saved Wi-Fi profile is currently available; retrying both profiles.");
+  Serial.println("Setup AP will become available automatically after 5 minutes without a network.");
+  lastEvent = "Wi-Fi unavailable; retrying two profiles";
+  return false;
+}
+
+void connectStoredWiFi() {
+  if (!wifiProfileConfigured(wifiProfiles[0]) && !wifiProfileConfigured(wifiProfiles[1])) {
+    Serial.println("No Wi-Fi profiles stored; starting initial setup AP");
     startAccessPoint();
+    return;
+  }
+  wifiUnavailableSince = millis();
+  if (!tryWiFiProfiles()) {
+    Serial.println("The board will keep retrying both networks before opening the setup AP.");
   }
 }
 
 void startAccessPoint() {
   provisioningAP = true;
+  apStartedAt = millis();
   WiFi.disconnect(true, true);
   delay(200);
   WiFi.mode(WIFI_AP);
@@ -860,19 +925,28 @@ void startAccessPoint() {
   WiFi.softAP("Rocky-XIAO-Setup");
   Serial.print("SETUP AP: Rocky-XIAO-Setup IP: "); Serial.println(WiFi.softAPIP());
   Serial.println("DASHBOARD: http://192.168.4.1");
-  Serial.println("Connect to Rocky-XIAO-Setup, open http://192.168.4.1, and save 2.4 GHz Wi-Fi settings.");
+  Serial.println("Connect to Rocky-XIAO-Setup, open http://192.168.4.1, and save one or two 2.4 GHz Wi-Fi profiles.");
   lastEvent = "Wi-Fi setup AP active";
 }
 
 void maintainWiFi() {
   if (provisioningAP) return;
-  if (WiFi.status() == WL_CONNECTED) return;
-  if (millis() - lastWiFiAttempt < ROCKY_WIFI_RETRY_MS) return;
+  if (WiFi.status() == WL_CONNECTED) {
+    wifiUnavailableSince = 0;
+    return;
+  }
 
+  if (wifiUnavailableSince == 0) wifiUnavailableSince = millis();
+  if (millis() - wifiUnavailableSince >= WIFI_FALLBACK_AP_AFTER_MS) {
+    Serial.println("Wi-Fi unavailable for 5 minutes; opening setup AP");
+    startAccessPoint();
+    return;
+  }
+
+  if (millis() - lastWiFiAttempt < ROCKY_WIFI_RETRY_MS) return;
   lastWiFiAttempt = millis();
-  Serial.println("Wi-Fi reconnect attempt");
-  WiFi.disconnect();
-  WiFi.begin(savedSsid.c_str(), savedPassword.c_str());
+  Serial.println("Wi-Fi reconnect attempt: trying both profiles");
+  tryWiFiProfiles();
 }
 
 bool initMicrophone() {
@@ -1209,6 +1283,9 @@ void setupRoutes() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/health", HTTP_GET, handleHealth);
   server.on("/api/status", HTTP_GET, handleStatus);
+  server.on("/api/changes", HTTP_GET, handleChanges);
+  server.on("/api/ota/catalog", HTTP_GET, handleOtaCatalog);
+  server.on("/oled.svg", HTTP_GET, handleOledSvg);
   server.on("/camera.jpg", HTTP_GET, handleCameraJpg);
   server.on("/camera/live", HTTP_GET, handleCameraLive);
   server.on("/cmd", HTTP_GET, handleCommand);
@@ -1219,37 +1296,21 @@ void setupRoutes() {
 
 void handleRoot() {
   String html = pageHeader("Rocky XIAO Desk Buddy");
-  html += "<h1>Rocky XIAO Desk Buddy</h1>";
-  html += "<p class='muted'>Modular XIAO bring-up: OLED, servo, DRV8833, microphone, speaker, Wi-Fi</p>";
-  html += "<section><h2>Status</h2><pre id='status'>Loading...</pre><button onclick='refreshStatus()'>Refresh</button></section>";
+  html += "<header><div><h1>Rocky XIAO Desk Buddy</h1><p class='muted'>Local control centre • dual Wi-Fi • remote OLED • versioned OTA</p></div><div id='netBadge' class='badge'>Loading network...</div></header>";
+  html += "<section class='hero'><div><h2>Live board monitor</h2><p class='muted'>This page stays on your local network. The OLED mirror refreshes without requiring the physical display to be nearby.</p><pre id='status'>Loading...</pre><button onclick='refreshStatus()'>Refresh status</button></div><div class='oledCard'><div class='muted'>OLED mirror</div><img id='oledMirror' src='/oled.svg' alt='Remote OLED display'><div id='oledTime' class='muted'>updating...</div></div></section>";
+  html += "<section class='releaseCard'><div class='releaseTop'><div><h2>What changed</h2><p id='releaseSummary' class='muted'>Loading release notes...</p></div><span id='releaseVersion' class='releaseVersion'>Release</span></div><ul id='releaseChanges' class='changes'><li>Loading changes...</li></ul><a class='button' href='/api/changes' target='_blank'>Open changes JSON</a></section>";
   html += "<section><h2>Face states</h2>";
   const char *faces[] = {"idle", "listening", "thinking", "speaking", "working", "happy", "laugh", "curious", "sad", "surprised", "error", "sleep"};
-  for (const char *face : faces) {
-    html += "<button onclick=\"cmd('face " + String(face) + "')\">" + String(face) + "</button>";
-  }
-  html += "<p class='muted'>Thinking = considering; Working = executing a task. They now use different eyes and labels.</p></section>";
-  html += "<section><h2>Personalities</h2>";
-  html += "<button onclick=\"cmd('personality calm')\">Calm</button>";
-  html += "<button onclick=\"cmd('personality rocky')\">Rocky</button>";
-  html += "<button onclick=\"cmd('personality engineer')\">Engineer</button>";
-  html += "<button onclick=\"cmd('personality spartan')\">Spartan</button>";
-  html += "<button class='isabella' onclick=\"cmd('personality isabella')\">Isabella</button></section>";
-  html += "<section><h2>OLED display</h2><p class='muted'>Invert the monochrome OLED palette without reflashing. The setting is stored on the board.</p><button onclick=\"cmd('oled invert on')\">Invert ON</button><button onclick=\"cmd('oled invert off')\">Invert OFF</button><button onclick=\"cmd('oled invert toggle')\">Toggle</button></section>";
-  html += "<section><h2>Pan servo</h2>";
-  html += "<button onclick=\"cmd('pan 0')\">0°</button><button onclick=\"cmd('pan 90')\">90°</button><button onclick=\"cmd('pan 180')\">180°</button>";
-  html += "<input id='angle' type='number' min='0' max='180' value='90'><button onclick=\"cmd('pan '+document.getElementById('angle').value)\">Move</button></section>";
-  html += "<section><h2>Head and dance</h2><button onclick=\"cmd('head auto')\">Head follows state</button><button onclick=\"cmd('head off')\">Head fixed</button><button onclick=\"cmd('dance start')\">Dance</button><button class='stop' onclick=\"cmd('dance stop')\">Stop dance</button></section>";
-  html += "<section><h2>DRV8833 motors</h2><p class='warn'>Keep the robot lifted. Motor supply and servo supply are external.</p>";
-  html += "<button onclick=\"cmd('motor forward')\">Forward</button><button onclick=\"cmd('motor back')\">Back</button>";
-  html += "<button onclick=\"cmd('motor left')\">Left</button><button onclick=\"cmd('motor right')\">Right</button>";
-  html += "<button class='stop' onclick=\"cmd('motor stop')\">STOP</button>";
-  html += "<input id='speed' type='number' min='0' max='255' value='100'><button onclick=\"cmd('motor speed '+document.getElementById('speed').value)\">Set speed</button><br><button onclick=\"cmd('motor invert left on')\">Left invert ON</button><button onclick=\"cmd('motor invert left off')\">Left invert OFF</button><button onclick=\"cmd('motor invert right on')\">Right invert ON</button><button onclick=\"cmd('motor invert right off')\">Right invert OFF</button></section>";
-  html += "<section><h2>Single-function tests</h2><button onclick=\"cmd('test oled')\">Test OLED</button><button onclick=\"cmd('test servo')\">Test servo</button><button onclick=\"cmd('test left')\">Test left motor</button><button onclick=\"cmd('test right')\">Test right motor</button><button onclick=\"cmd('test motor')\">Test motors</button><button onclick=\"cmd('test wifi')\">Test Wi-Fi</button><button onclick=\"cmd('test mic')\">Mic to speaker</button><button onclick=\"cmd('mic monitor')\">Mic meter only</button><button onclick=\"cmd('mic off')\">Stop mic</button><button onclick=\"cmd('test audio')\">Test audio tone</button><button class='stop' onclick=\"cmd('audio stop')\">Stop audio</button></section>";
-  html += "<section><h2>Microphone, speaker, and wake name</h2><p class='muted'>Loopback routes the onboard Sense microphone to the MAX98357A speaker. Volume is software-scaled and stored on the board. This release includes a manual wake test; actual spoken-name recognition requires a later wake-word engine.</p><input id='volume' type='number' min='0' max='100' value='20'><button onclick=\"cmd('audio volume '+document.getElementById('volume').value)\">Set volume %</button><button onclick=\"cmd('mic loopback 60')\">Loopback 60 s</button><button class='stop' onclick=\"cmd('mic off')\">Stop loopback</button><br><input id='wakeName' value='rocky' maxlength='20'><button onclick=\"cmd('wake name '+document.getElementById('wakeName').value)\">Set wake name</button><button onclick=\"cmd('wake on')\">Wake ON</button><button onclick=\"cmd('wake off')\">Wake OFF</button><button onclick=\"cmd('wake simulate')\">Simulate wake</button></section>";
-  html += "<section><h2>Camera</h2><p class='muted'>Snapshot or low-rate live preview. Live mode refreshes JPEG frames without blocking the rest of the robot.</p><img id='camera' style='width:100%;max-width:640px;border-radius:10px;background:#080a0e' alt='Camera preview'><br><button onclick='refreshCamera()'>Snapshot</button><a class='button' href='/camera/live' target='_blank'>Live mode</a><a class='button' href='/camera.jpg' target='_blank'>Open JPEG</a></section>";
-  html += "<section><h2>Firmware and OTA</h2><div id='otaBanner' class='ota idle'>OTA status: loading</div><pre id='ota'>Loading...</pre><button onclick=\"cmd('restart')\">Restart and check OTA</button><p class='muted'>After GitHub Actions publishes a newer version, this button reboots the board. The OLED and Serial Monitor show checking, downloading, progress, and rebooting.</p></section>";
-  html += "<section><h2>Network</h2><a class='button' href='/wifi'>Configure Wi-Fi</a></section>";
-  html += "<script>async function cmd(c){try{let r=await fetch('/cmd?c='+encodeURIComponent(c));let t=await r.text();document.getElementById('status').textContent=t;await refreshStatus()}catch(e){document.getElementById('status').textContent='Command failed: '+e}} function otaText(s){let text='firmware: '+s.firmware+'\\nmanifest configured: '+s.otaConfigured+'\\nstate: '+s.otaState+'\\nremote version: '+(s.otaRemoteVersion||'unknown')+'\\nprogress: '+s.otaProgress+'%';if(s.otaError)text+='\\nerror: '+s.otaError;return text} function otaBanner(s){let el=document.getElementById('otaBanner');el.className='ota '+s.otaState;let label=s.otaState.replaceAll('_',' ');el.textContent='OTA status: '+label+(s.otaRemoteVersion?' | remote '+s.otaRemoteVersion:'')+(s.otaState==='downloading'?' | '+s.otaProgress+'%':'')} async function refreshStatus(){try{let r=await fetch('/api/status?ts='+Date.now());if(!r.ok)throw new Error('HTTP '+r.status);let s=await r.json();document.getElementById('status').textContent=JSON.stringify(s,null,2);document.getElementById('ota').textContent=otaText(s);otaBanner(s)}catch(e){document.getElementById('status').textContent='Dashboard cannot reach device: '+e}} function refreshCamera(){if(document.getElementById('camera'))document.getElementById('camera').src='/camera.jpg?ts='+Date.now()} refreshStatus();refreshCamera();setInterval(refreshStatus,5000);</script>";
+  for (const char *face : faces) html += "<button onclick=\"cmd('face " + String(face) + "')\">" + String(face) + "</button>";
+  html += "</section><section><h2>Personalities</h2><button onclick=\"cmd('personality calm')\">Calm</button><button onclick=\"cmd('personality rocky')\">Rocky</button><button onclick=\"cmd('personality engineer')\">Engineer</button><button onclick=\"cmd('personality spartan')\">Spartan</button><button class='isabella' onclick=\"cmd('personality isabella')\">Isabella</button></section>";
+  html += "<section><h2>OLED display</h2><p class='muted'>Invert the physical OLED palette without reflashing.</p><button onclick=\"cmd('oled invert on')\">Invert ON</button><button onclick=\"cmd('oled invert off')\">Invert OFF</button><button onclick=\"cmd('oled invert toggle')\">Toggle</button></section>";
+  html += "<section><h2>Pan servo</h2><button onclick=\"cmd('pan 0')\">0°</button><button onclick=\"cmd('pan 90')\">90°</button><button onclick=\"cmd('pan 180')\">180°</button><input id='angle' type='number' min='0' max='180' value='90'><button onclick=\"cmd('pan '+document.getElementById('angle').value)\">Move</button></section>";
+  html += "<section><h2>Head, dance, and motors</h2><button onclick=\"cmd('head auto')\">Head follows state</button><button onclick=\"cmd('head off')\">Head fixed</button><button onclick=\"cmd('dance start')\">Dance</button><button class='stop' onclick=\"cmd('dance stop')\">Stop dance</button><p class='warn'>Keep the robot lifted and motor power controlled during tests.</p><button onclick=\"cmd('motor forward')\">Forward</button><button onclick=\"cmd('motor back')\">Back</button><button onclick=\"cmd('motor left')\">Left</button><button onclick=\"cmd('motor right')\">Right</button><button class='stop' onclick=\"cmd('motor stop')\">STOP</button><input id='speed' type='number' min='0' max='255' value='100'><button onclick=\"cmd('motor speed '+document.getElementById('speed').value)\">Set speed</button></section>";
+  html += "<section><h2>Microphone and speaker</h2><button onclick=\"cmd('test mic')\">Mic to speaker</button><button onclick=\"cmd('mic monitor')\">Mic meter only</button><button onclick=\"cmd('mic off')\">Stop mic</button><input id='volume' type='number' min='0' max='100' value='20'><button onclick=\"cmd('audio volume '+document.getElementById('volume').value)\">Set volume %</button><button onclick=\"cmd('test audio')\">Test tone</button></section>";
+  html += "<section><h2>Camera</h2><img id='camera' class='camera' alt='Camera preview'><button onclick='refreshCamera()'>Snapshot</button><a class='button' href='/camera/live' target='_blank'>Live mode</a><a class='button' href='/camera.jpg' target='_blank'>Open JPEG</a></section>";
+  html += "<section><h2>Wi-Fi networks</h2><p class='muted'>Two saved 2.4 GHz profiles are tried in order. If neither is available for five minutes, the board starts Rocky-XIAO-Setup at 192.168.4.1.</p><a class='button' href='/wifi'>Configure two networks</a></section>";
+  html += "<section><h2>Firmware and OTA</h2><div id='otaBanner' class='ota idle'>OTA status: loading</div><pre id='ota'>Loading...</pre><label>Target version</label><select id='otaTarget'><option value=''>Latest release</option></select><button onclick=\"setOtaTarget()\">Set target</button><button onclick=\"cmd('ota latest')\">Use latest</button><button onclick=\"cmd('restart')\">Restart and check OTA</button><p class='muted'>Selecting a specific version is an explicit upgrade/downgrade request. The target clears after a successful update.</p></section>";
+  html += "<script>async function cmd(c){try{let r=await fetch('/cmd?c='+encodeURIComponent(c));let t=await r.text();document.getElementById('status').textContent=t;await refreshStatus()}catch(e){document.getElementById('status').textContent='Command failed: '+e}}function setOtaTarget(){let v=document.getElementById('otaTarget').value;cmd(v?'ota target '+v:'ota latest')}function otaText(s){let text='firmware: '+s.firmware+'\\nnetwork: '+s.network+'\\nactive Wi-Fi profile: '+s.activeWifiProfile+'\\nOLED mirror: /oled.svg\\nOTA state: '+s.otaState+'\\nremote version: '+(s.otaRemoteVersion||'unknown')+'\\ntarget version: '+(s.otaTargetVersion||'latest')+'\\nprogress: '+s.otaProgress+'%';if(s.otaError)text+='\\nerror: '+s.otaError;return text}function otaBanner(s){let el=document.getElementById('otaBanner');el.className='ota '+s.otaState;let label=s.otaState.replaceAll('_',' ');el.textContent='OTA status: '+label+(s.otaRemoteVersion?' | remote '+s.otaRemoteVersion:'')+(s.otaTargetVersion?' | target '+s.otaTargetVersion:'')}async function refreshStatus(){try{let r=await fetch('/api/status?ts='+Date.now());if(!r.ok)throw new Error('HTTP '+r.status);let s=await r.json();document.getElementById('status').textContent=JSON.stringify(s,null,2);document.getElementById('ota').textContent=otaText(s);otaBanner(s);document.getElementById('netBadge').textContent=s.network==='wifi_connected'?'Wi-Fi profile '+s.activeWifiProfile:s.network==='setup_ap'?'Setup AP 192.168.4.1':'Network unavailable'}catch(e){document.getElementById('status').textContent='Dashboard cannot reach device: '+e}}async function refreshCatalog(){try{let r=await fetch('/api/ota/catalog?ts='+Date.now());if(!r.ok)return;let c=await r.json();let select=document.getElementById('otaTarget');let current=select.value;select.innerHTML='<option value="">Latest release</option>';(c.versions||[]).forEach(v=>{let o=document.createElement('option');o.value=v.version;o.textContent=v.version+(v.current?' (current release)':'');select.appendChild(o)});select.value=current}catch(e){}}function refreshOled(){let img=document.getElementById('oledMirror');if(img)img.src='/oled.svg?ts='+Date.now();document.getElementById('oledTime').textContent='last refresh: '+new Date().toLocaleTimeString()}function refreshCamera(){if(document.getElementById('camera'))document.getElementById('camera').src='/camera.jpg?ts='+Date.now()}async function refreshChanges(){try{let r=await fetch('/api/changes?ts='+Date.now());if(!r.ok)return;let c=await r.json();document.getElementById('releaseVersion').textContent='v'+c.version;document.getElementById('releaseSummary').textContent=c.summary;document.getElementById('releaseChanges').innerHTML=(c.changes||[]).map(x=>'<li>'+x+'</li>').join('')}catch(e){document.getElementById('releaseSummary').textContent='Release notes unavailable'}}refreshStatus();refreshCatalog();refreshChanges();refreshOled();refreshCamera();setInterval(refreshStatus,5000);setInterval(refreshChanges,30000);setInterval(refreshOled,1000);</script>";
   html += "</body></html>";
   server.send(200, "text/html", html);
 }
@@ -1262,7 +1323,12 @@ void handleStatus() {
   String json = "{";
   json += "\"network\":\"" + htmlEscape(networkModeName()) + "\",";
   json += "\"ip\":\"" + (provisioningAP ? WiFi.softAPIP().toString() : WiFi.localIP().toString()) + "\",";
-  json += "\"ssid\":\"" + htmlEscape(savedSsid) + "\",";
+  json += "\"ssid\":\"" + htmlEscape(WiFi.status() == WL_CONNECTED ? WiFi.SSID() : savedSsid) + "\",";
+  json += "\"wifiProfile1\":\"" + htmlEscape(savedSsid) + "\",";
+  json += "\"wifiProfile2\":\"" + htmlEscape(savedSsid2) + "\",";
+  json += "\"activeWifiProfile\":" + String(activeWifiIndex >= 0 ? activeWifiIndex + 1 : 0) + ",";
+  json += "\"wifiFallbackSeconds\":" + String((wifiUnavailableSince > 0 && !provisioningAP && millis() > wifiUnavailableSince) ? (millis() - wifiUnavailableSince) / 1000UL : 0) + ",";
+  json += "\"setupAp\":" + String(provisioningAP ? "true" : "false") + ",";
   json += "\"rssi\":" + String(provisioningAP ? 0 : WiFi.RSSI()) + ",";
   json += "\"face\":\"" + faceName() + "\",";
   json += "\"personality\":\"" + personalityName() + "\",";
@@ -1288,12 +1354,27 @@ void handleStatus() {
   json += "\"otaConfigured\":" + String(OTA_MANIFEST_URL[0] != '\0' ? "true" : "false") + ",";
   json += "\"otaState\":\"" + String(otaService.stateName()) + "\",";
   json += "\"otaRemoteVersion\":\"" + htmlEscape(String(otaService.remoteVersion())) + "\",";
+  json += "\"otaTargetVersion\":\"" + htmlEscape(String(otaService.targetVersion())) + "\",";
+  json += "\"otaCatalogUrl\":\"" + htmlEscape(String(otaService.catalogUrl())) + "\",";
   json += "\"otaProgress\":" + String(otaService.progress()) + ",";
   json += "\"otaUpdateAvailable\":" + String(otaService.updateAvailable() ? "true" : "false") + ",";
   json += "\"otaError\":\"" + htmlEscape(String(otaService.lastError())) + "\",";
   json += "\"time\":\"" + currentTimeText() + "\",";
   json += "\"lastEvent\":\"" + htmlEscape(lastEvent) + "\"";
   json += "}";
+  server.send(200, "application/json", json);
+}
+
+void handleChanges() {
+  String json = "{\"version\":\"" + String(DESKBOT_RELEASE_VERSION) +
+                "\",\"title\":\"" + String(DESKBOT_RELEASE_TITLE) +
+                "\",\"summary\":\"" + String(DESKBOT_RELEASE_SUMMARY) +
+                "\",\"changes\":[";
+  for (uint8_t i = 0; i < DESKBOT_RELEASE_CHANGE_COUNT; ++i) {
+    if (i > 0) json += ",";
+    json += "\"" + htmlEscape(String(DESKBOT_RELEASE_CHANGES[i])) + "\"";
+  }
+  json += "]}";
   server.send(200, "application/json", json);
 }
 
@@ -1314,30 +1395,79 @@ void handleCommand() {
 }
 
 void handleWiFiForm() {
-  String html = pageHeader("Configure Wi-Fi");
-  html += "<h1>Configure Wi-Fi</h1><p>Use a 2.4 GHz network. The XIAO ESP32-S3 does not connect to 5 GHz.</p>";
-  html += "<form method='POST' action='/wifi'><label>SSID</label><input name='ssid' required value='" + htmlEscape(savedSsid) + "'><label>Password</label><input name='password' type='password'><button type='submit'>Save and reboot</button></form>";
-  html += "<p>After saving, reconnect your phone/computer to the normal network and open the new IP shown in Serial Monitor.</p></body></html>";
+  String html = pageHeader("Deskbot Wi-Fi setup");
+  html += String("<header><div><h1>Deskbot Wi-Fi setup</h1><p class='muted'>Save two independent 2.4 GHz networks. The board tries profile 1, then profile 2.</p></div><div class='badge'>") + (provisioningAP ? "Setup AP" : "Connected dashboard") + "</div></header>";
+  html += "<section class='hero'><div><h2>Network profiles</h2><form method='POST' action='/wifi'><label>Profile 1 SSID</label><input name='ssid1' required value='" + htmlEscape(savedSsid) + "'><label>Profile 1 password</label><input name='password1' type='password' placeholder='Leave blank for an open network'><label>Profile 2 SSID (optional)</label><input name='ssid2' value='" + htmlEscape(savedSsid2) + "'><label>Profile 2 password</label><input name='password2' type='password' placeholder='Leave blank for an open network'><button type='submit'>Save both profiles and reboot</button></form><p class='muted'>If both networks disappear while the board is running, the board retries them for five minutes, then opens Rocky-XIAO-Setup at 192.168.4.1.</p></div><div class='oledCard'><div class='muted'>OLED mirror</div><img id='oledMirror' src='/oled.svg' alt='Remote OLED display'><p class='muted'>The same mirror is available at <code>/oled.svg</code>.</p></div></section>";
+  html += "<p><a class='button' href='/'>Back to dashboard</a></p><script>setInterval(function(){document.getElementById('oledMirror').src='/oled.svg?ts='+Date.now()},1000)</script></body></html>";
   server.send(200, "text/html", html);
 }
 
 void handleWiFiSave() {
-  if (!server.hasArg("ssid") || !server.hasArg("password")) {
-    server.send(400, "text/plain", "SSID and password are required");
+  String ssid1 = server.hasArg("ssid1") ? server.arg("ssid1") : server.arg("ssid");
+  String pass1 = server.hasArg("password1") ? server.arg("password1") : server.arg("password");
+  String ssid2 = server.arg("ssid2");
+  String pass2 = server.arg("password2");
+  ssid1.trim(); ssid2.trim();
+  if (ssid1.length() == 0) {
+    server.send(400, "text/plain", "Profile 1 SSID cannot be empty");
     return;
   }
-  String ssid = server.arg("ssid");
-  String pass = server.arg("password");
-  ssid.trim();
-  if (ssid.length() == 0) {
-    server.send(400, "text/plain", "SSID cannot be empty");
-    return;
-  }
-  preferences.putString("ssid", ssid);
-  preferences.putString("pass", pass);
-  server.send(200, "text/html", "<h1>Saved</h1><p>Rebooting. Reconnect to your normal Wi-Fi, then open the new IP shown in Serial Monitor.</p>");
+  if (pass1.length() == 0 && ssid1 == savedSsid) pass1 = savedPassword;
+  if (pass2.length() == 0 && ssid2.length() > 0 && ssid2 == savedSsid2) pass2 = savedPassword2;
+  preferences.putString("ssid", ssid1);
+  preferences.putString("pass", pass1);
+  preferences.putString("ssid2", ssid2);
+  preferences.putString("pass2", pass2);
+  server.send(200, "text/html", "<h1>Saved</h1><p>Both Wi-Fi profiles were saved. Rebooting; reconnect to your normal network and open the new dashboard IP.</p>");
   delay(700);
   ESP.restart();
+}
+
+void handleOledSvg() {
+  if (!display.width()) {
+    server.send(503, "text/plain", "OLED is not initialized");
+    return;
+  }
+  uint8_t *buffer = display.getBuffer();
+  if (!buffer) {
+    server.send(503, "text/plain", "OLED framebuffer unavailable");
+    return;
+  }
+
+  String svg;
+  svg.reserve(24000);
+  svg += "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 64' shape-rendering='crispEdges'><rect width='128' height='64' fill='#05070b'/>";
+  for (int y = 0; y < 64; ++y) {
+    int x = 0;
+    while (x < 128) {
+      const int index = (y / 8) * 128 + x;
+      bool lit = (buffer[index] & (1 << (y & 7))) != 0;
+      if (oledInverted) lit = !lit;
+      if (!lit) { ++x; continue; }
+      const int startX = x;
+      while (x < 128) {
+        const int nextIndex = (y / 8) * 128 + x;
+        bool nextLit = (buffer[nextIndex] & (1 << (y & 7))) != 0;
+        if (oledInverted) nextLit = !nextLit;
+        if (!nextLit) break;
+        ++x;
+      }
+      svg += "<rect x='" + String(startX) + "' y='" + String(y) + "' width='" + String(x - startX) + "' height='1' fill='white'/>";
+    }
+  }
+  svg += "</svg>";
+  server.sendHeader("Cache-Control", "no-store");
+  server.send(200, "image/svg+xml", svg);
+}
+
+void handleOtaCatalog() {
+  String catalog;
+  if (!otaService.fetchCatalog(catalog)) {
+    server.send(503, "application/json", "{\"versions\":[],\"error\":\"catalog unavailable\"}");
+    return;
+  }
+  server.sendHeader("Cache-Control", "no-store");
+  server.send(200, "application/json", catalog);
 }
 
 void handleNotFound() {
@@ -1345,7 +1475,7 @@ void handleNotFound() {
 }
 
 String pageHeader(const String &title) {
-  String html = "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>" + title + "</title><style>body{font-family:system-ui;background:#10131a;color:#f3f5f7;max-width:900px;margin:0 auto;padding:20px}section{background:#1b2230;border-radius:14px;padding:16px;margin:14px 0}button,.button{display:inline-block;border:0;border-radius:9px;background:#3d82f6;color:white;padding:11px 14px;margin:4px;text-decoration:none;font-size:15px}button:active{transform:scale(.97)}.stop{background:#d63855}.isabella{background:#3478f6;border:1px solid #8db7ff}.warn{color:#ffd166}.muted{color:#aeb8c9}input{padding:11px;border-radius:8px;border:1px solid #76809a;background:#0f131c;color:white;margin:5px;width:95%;box-sizing:border-box}label{display:block;margin-top:10px}pre{white-space:pre-wrap;background:#0c0f15;padding:12px;border-radius:8px}.ota{padding:12px;border-radius:8px;text-transform:capitalize;font-weight:600}.ota.up_to_date{background:#164b35;color:#b9ffd7}.ota.update_available,.ota.downloading,.ota.installing,.ota.rebooting{background:#594313;color:#ffe9a6}.ota.error{background:#5b1c2c;color:#ffd0da}.ota.disabled{background:#303744;color:#cbd5e1}</style></head><body>";
+  String html = "<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>" + title + "</title><style>body{font-family:system-ui,-apple-system,sans-serif;background:#0d111a;color:#f3f5f7;max-width:1100px;margin:0 auto;padding:16px}header{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin:8px 0 18px}h1{font-size:clamp(28px,5vw,44px);margin:4px 0}h2{margin-top:4px}section{background:#182131;border:1px solid #2b3850;border-radius:16px;padding:16px;margin:14px 0;box-shadow:0 8px 22px #0003}.hero{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:18px}.oledCard{background:#0a0e16;border-radius:12px;padding:12px;text-align:center}.oledCard img{display:block;width:100%;image-rendering:pixelated;border:1px solid #5f6f8d;border-radius:8px;background:#05070b;margin:8px 0}.badge{background:#28456e;color:#dcecff;border-radius:999px;padding:8px 12px;white-space:nowrap;font-size:13px}.releaseCard{border-color:#4a78b8;background:linear-gradient(135deg,#1b2c46,#182131)}.releaseTop{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}.releaseVersion{background:#4b8df8;color:white;border-radius:999px;padding:8px 12px;font-weight:700;white-space:nowrap}.changes{padding-left:22px;margin-bottom:10px}.changes li{margin:7px 0;color:#dbe7f7}.quick{display:flex;flex-wrap:wrap;gap:4px}.camera{display:block;width:100%;max-width:700px;min-height:120px;object-fit:contain;border-radius:10px;background:#080a0e;margin:8px 0}button,.button{display:inline-block;border:0;border-radius:9px;background:#3d82f6;color:white;padding:11px 14px;margin:4px;text-decoration:none;font-size:15px;cursor:pointer}button:active{transform:scale(.97)}.stop{background:#d63855}.isabella{background:#3478f6;border:1px solid #8db7ff}.warn{color:#ffd166}.muted{color:#aeb8c9}input,select{padding:11px;border-radius:8px;border:1px solid #76809a;background:#0f131c;color:white;margin:5px;width:95%;max-width:420px;box-sizing:border-box}label{display:block;margin-top:10px}pre{white-space:pre-wrap;overflow:auto;background:#0c0f15;padding:12px;border-radius:8px}.ota{padding:12px;border-radius:8px;text-transform:capitalize;font-weight:600}.ota.up_to_date{background:#164b35;color:#b9ffd7}.ota.update_available,.ota.downloading,.ota.installing,.ota.rebooting{background:#594313;color:#ffe9a6}.ota.error{background:#5b1c2c;color:#ffd0da}.ota.disabled{background:#303744;color:#cbd5e1}@media(max-width:720px){body{padding:10px}.hero{grid-template-columns:1fr}header{display:block}.badge{display:inline-block;margin-top:8px}}</style></head><body>";
   return html;
 }
 

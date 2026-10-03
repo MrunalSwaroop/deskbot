@@ -45,7 +45,7 @@ Each board needs one final USB-uploaded OTA-capable v0.0.1 image with the correc
 
 ## GitHub workflows
 
-`build-all-boards.yml` compiles the board profiles without private files. `publish-ota.yml` creates the OTA-enabled XIAO image, writes the HTTPS manifest, computes SHA-256, and publishes GitHub Pages. `release-check.yml` validates the repository contract independently.
+`build-all-boards.yml` compiles the board profiles without private files. `publish-ota.yml` creates the OTA-enabled XIAO image, writes the HTTPS manifest, computes SHA-256, updates the retained `ota/catalog.json`, publishes every image under `ota/releases/<version>/`, and creates a GitHub Release containing the binary. `release-check.yml` validates the repository contract independently.
 
 GitHub Pages must use **GitHub Actions** as its source. For the free unauthenticated device path, the repository and Pages site must be public. The local dashboard remains private on the local network.
 
@@ -58,7 +58,11 @@ GitHub Pages must use **GitHub Actions** as its source. For the free unauthentic
 5. Add remaining board IDs or switch the policy to `all`.
 6. Reboot boards while stationary and verify each local dashboard.
 
-The firmware checks the manifest once after Wi-Fi becomes available. An unselected board remains on its current version.
+The firmware checks the manifest once after Wi-Fi becomes available. An unselected board remains on its current version. The dashboard can select `latest` for the normal newer-only path, or a catalog version for an explicit upgrade/downgrade. A selected target is cleared after a successful update.
+
+## Wi-Fi fallback and remote display
+
+The `/wifi` page accepts two 2.4 GHz profiles. If the board has saved profiles but neither is available, it keeps retrying for five minutes before starting `Rocky-XIAO-Setup` at `192.168.4.1`. The dashboard and setup page expose `/oled.svg`, a local SVG mirror of the 128×64 SSD1306 framebuffer. This is for monitoring on the same LAN or setup AP; it is not an internet-facing service.
 
 ## Recovery
 
@@ -73,4 +77,4 @@ Never commit `ota_target.h`, Wi-Fi passwords, API keys, `.env` files, build fold
 [3]: https://wiki.seeedstudio.com/xiao_esp32s3_getting_started/ "Seeed Studio XIAO ESP32-S3 getting started guide"
 
 
-For the current v0.0.5.1 procedure, see [`docs/RELEASE_V0.0.5.1.md`](RELEASE_V0.0.5.1.md).
+For the current v0.0.5.3 procedure, see [`docs/RELEASE_V0.0.5.3.md`](RELEASE_V0.0.5.3.md).

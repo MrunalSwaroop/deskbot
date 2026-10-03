@@ -8,4 +8,5 @@
 #define OTA_MANIFEST_URL "https://MrunalSwaroop.github.io/deskbot/ota/xiao-esp32s3-manifest.json"
 #define OTA_MANIFEST_HOST "MrunalSwaroop.github.io"
 #define OTA_MANIFEST_PATH "/deskbot/ota/xiao-esp32s3-manifest.json"
+#define OTA_CATALOG_URL "https://MrunalSwaroop.github.io/deskbot/ota/catalog.json"
 #define OTA_TARGET_VERSION ""

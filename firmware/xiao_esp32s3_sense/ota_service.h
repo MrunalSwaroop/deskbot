@@ -27,9 +27,14 @@ class OtaService {
   OtaState state() const;
   const char *stateName() const;
   const char *remoteVersion() const;
+  const char *targetVersion() const;
+  const char *catalogUrl() const;
   const char *lastError() const;
   int progress() const;
   bool updateAvailable() const;
+  bool setTargetVersion(const String &version);
+  void clearTargetVersion();
+  bool fetchCatalog(String &catalog);
 
  private:
   bool fetchManifestVersion(char* version, size_t versionSize, bool& allowed);
@@ -40,6 +45,7 @@ class OtaService {
   char ssid_[33] = {};
   char password_[65] = {};
   char remoteVersion_[24] = {};
+  char targetVersion_[24] = {};
   char lastError_[96] = {};
   bool wifiAttempted_ = false;
   bool wifiConnected_ = false;

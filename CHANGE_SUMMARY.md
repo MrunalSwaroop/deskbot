@@ -4,7 +4,28 @@ This file is included in every ZIP release. It records the requirements addresse
 
 ## Release date
 
-2026-09-27
+2026-10-01
+
+### Deskbot v0.0.5.3 — dual Wi-Fi, five-minute setup fallback, remote OLED, and versioned OTA catalog
+
+**Requirement:** Starting from the verified v0.0.5.2 base, let the board remember two Wi-Fi networks, ask the user to configure networking through the initial/setup IP, recover to configuration after five minutes without network service, show the OLED remotely, and retain every GitHub firmware version for controlled upgrades or downgrades.
+
+**Corrections and changes:**
+
+- Added replaceable `wifi_profiles.h` and two NVS-backed SSID/password slots.
+- Changed Wi-Fi boot and reconnect behavior to try both saved profiles before opening `Rocky-XIAO-Setup` after five minutes of continuous unavailability.
+- Rebuilt `/wifi` as a responsive two-profile configuration page for both the setup AP and the normal dashboard.
+- Added `/oled.svg` and a dashboard/setup-page OLED mirror generated from the SSD1306 framebuffer.
+- Added a responsive dashboard network badge, remote OLED refresh, OTA catalog selector, and explicit latest/target controls.
+- Added `version_catalog.h`, persistent `ota target <version>`, `ota latest`, and `ota clear` commands. A selected target can intentionally upgrade or downgrade and is cleared after success.
+- Reworked `publish-ota.yml` to retain versioned Pages binaries, update `ota/catalog.json`, and create a GitHub Release asset for every release.
+- Added `docs/RELEASE_V0.0.5.3.md` with the step-by-step network, OTA, rollback, and verification sequence.
+- Added `modules/core/release_notes.h`, `/api/changes`, and a dashboard **What changed** card so the running board explains its own release.
+- Improved dashboard styling with a highlighted release card, version badge, readable change bullets, and direct changes JSON access.
+- Added `docs/RELEASE_HISTORY.md` to distinguish commits, tags, GitHub Releases, OTA catalog entries, and historical source folders.
+- Added `.github/workflows/publish-history.yml` to rebuild and publish the meaningful historical XIAO milestones as official GitHub Releases.
+
+**Verification target:** `python tools/check_release.py`; USB and temporary OTA-enabled builds compile with ESP32 Arduino core 3.3.7 and the verified XIAO FQBN; dashboard/C++ source checks pass; `/oled.svg`, `/wifi`, `/api/ota/catalog`, two-profile fallback, and target-version controls are present.
 
 ### Deskbot v0.0.5.2 — microphone loopback, speaker volume, OLED meter, and wake-name boundary
 
