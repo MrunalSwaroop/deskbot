@@ -1,0 +1,12 @@
+{
+  "version": "0.0.4",
+  "folder": "v0.0.4",
+  "source_commit": "9120a983b3ed8a17bfb8108c6694ef7dbb7d3194",
+  "purpose": "OTA-stable ESP32 Arduino core 3.3.7 baseline",
+  "release_url": "https://github.com/MrunalSwaroop/deskbot/releases/tag/v0.0.4",
+  "firmware_url": "https://github.com/MrunalSwaroop/deskbot/releases/download/v0.0.4/XIAO-ESP32S3.bin",
+  "manifest_url": "https://github.com/MrunalSwaroop/deskbot/releases/download/v0.0.4/manifest.json",
+  "ota_manifest_url": "https://MrunalSwaroop.github.io/deskbot/releases/0.0.4/manifest.json",
+  "source_layout": "source/",
+  "generated_binaries_in_git": false
+}

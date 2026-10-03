@@ -1,0 +1,87 @@
+name: Publish historical Deskbot releases
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Publish v${{ matrix.version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: "0.0.1"
+            commit: "07578cf"
+          - version: "0.0.4"
+            commit: "9120a983b3ed8a17bfb8108c6694ef7dbb7d3194"
+          - version: "0.0.5.1"
+            commit: "f95edb852325a56a45b004a5ab532f8c2b33f6a1"
+          - version: "0.0.5.2"
+            commit: "c314447c3eacd343f680d7743e713bf62445ca13"
+    steps:
+      - name: Check out historical source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.commit }}
+          fetch-depth: 0
+
+      - name: Set up Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Install verified ESP32 toolchain
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32@3.3.7
+          arduino-cli lib install "Adafruit GFX Library"
+          arduino-cli lib install "Adafruit SSD1306"
+          arduino-cli lib install "ESP32Servo"
+
+      - name: Configure historical OTA build
+        shell: bash
+        run: |
+          cat > firmware/xiao_esp32s3_sense/ota_target.h <<EOF
+          #pragma once
+          #define ROCKY_OTA_ENABLED 1
+          #define APP_VERSION "${{ matrix.version }}-historical"
+          #define OTA_UPDATE_URL "https://MrunalSwaroop.github.io/deskbot/ota/XIAO-ESP32S3.bin"
+          #define OTA_MANIFEST_URL "https://MrunalSwaroop.github.io/deskbot/ota/xiao-esp32s3-manifest.json"
+          #define OTA_MANIFEST_HOST "MrunalSwaroop.github.io"
+          #define OTA_MANIFEST_PATH "/deskbot/ota/xiao-esp32s3-manifest.json"
+          #define OTA_TARGET_VERSION ""
+          EOF
+
+      - name: Compile historical XIAO firmware
+        run: |
+          arduino-cli compile \
+            --fqbn 'esp32:esp32:XIAO_ESP32S3:PSRAM=opi,FlashMode=qio,FlashSize=8M,USBMode=hwcdc,CDCOnBoot=default,UploadMode=default,PartitionScheme=default_8MB' \
+            --output-dir build \
+            firmware/xiao_esp32s3_sense
+          cp build/xiao_esp32s3_sense.ino.bin XIAO-ESP32S3.bin
+          sha256sum XIAO-ESP32S3.bin > SHA256SUMS.txt
+          cat > manifest.json <<EOF
+          {
+            "device": "XIAO-ESP32S3",
+            "version": "${{ matrix.version }}",
+            "source": "${{ matrix.commit }}",
+            "historical": true
+          }
+          EOF
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "v${{ matrix.version }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload "v${{ matrix.version }}" XIAO-ESP32S3.bin manifest.json SHA256SUMS.txt --clobber --repo "${{ github.repository }}"
+          else
+            gh release create "v${{ matrix.version }}" XIAO-ESP32S3.bin manifest.json SHA256SUMS.txt \
+              --repo "${{ github.repository }}" \
+              --target "${{ matrix.commit }}" \
+              --title "Deskbot v${{ matrix.version }}" \
+              --notes "Historical XIAO ESP32-S3 Sense firmware preserved from commit ${{ matrix.commit }}."
+          fi

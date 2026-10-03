@@ -1,0 +1,12 @@
+{
+  "version": "0.0.5.4",
+  "folder": "v0.0.5.4",
+  "source_commit": "522c56ab17a76cb1aa1095f2c555ba99d42b39a4",
+  "purpose": "Phone-first dashboard and deferred OTA startup check",
+  "release_url": "https://github.com/MrunalSwaroop/deskbot/releases/tag/v0.0.5.4",
+  "firmware_url": "https://github.com/MrunalSwaroop/deskbot/releases/download/v0.0.5.4/XIAO-ESP32S3.bin",
+  "manifest_url": "https://github.com/MrunalSwaroop/deskbot/releases/download/v0.0.5.4/manifest.json",
+  "ota_manifest_url": "https://MrunalSwaroop.github.io/deskbot/releases/0.0.5.4/manifest.json",
+  "source_layout": "source/",
+  "generated_binaries_in_git": false
+}

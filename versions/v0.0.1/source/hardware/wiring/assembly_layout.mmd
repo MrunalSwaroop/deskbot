@@ -1,0 +1,77 @@
+flowchart TB
+  %% Simplified physical assembly layout — view from above
+  %% Front is at the top. Keep signal wires short and route power at the rear.
+
+  subgraph FRONT["FRONT OF DESK ROBOT"]
+    O["OLED face<br/>SSD1306"]
+    X["XIAO ESP32-S3 Sense<br/>centered behind OLED"]
+    S["Pan servo<br/>under/behind OLED"]
+  end
+
+  subgraph RIGHT["RIGHT SIDE — AUDIO"]
+    AMP["MAX98357A<br/>I2S amplifier"]
+    SPK["Speaker<br/>4Ω or 8Ω"]
+  end
+
+  subgraph REAR["REAR — KEEP POWER AND MOTOR WIRES HERE"]
+    BUS5["ONE 5V POWER BUS<br/>regulated 5V, ≥2A recommended"]
+    BUSG["ONE GROUND BUS<br/>all negatives join here"]
+    D["DRV8833<br/>dual H-bridge"]
+    VM["Motor battery / motor supply<br/>separate VM rail"]
+  end
+
+  subgraph DRIVE["LOWER LEFT / LOWER RIGHT"]
+    L["Left N90 motor"]
+    R["Right N90 motor"]
+  end
+
+  USB["USB-C to XIAO<br/>controller power and upload"]
+
+  O -- "short I2C: GPIO5 SDA<br/>GPIO6 SCL; 3V3; GND" --> X
+  X -- "GPIO1 / D0 signal" --> S
+  BUS5 -- "+5V" --> S
+  BUSG -- "GND" --> S
+
+  X -- "GPIO3 / D2 BCLK<br/>GPIO4 / D3 LRC<br/>GPIO2 / D1 DIN" --> AMP
+  BUS5 -- "+5V" --> AMP
+  BUSG -- "GND" --> AMP
+  AMP -- "SPK+ and SPK− only" --> SPK
+
+  X -- "GPIO43 / D6 AIN1<br/>GPIO44 / D7 AIN2<br/>GPIO7 / D8 BIN1<br/>GPIO8 / D9 BIN2" --> D
+  X -- "3V3" --> D
+  D -- "nSLEEP / SLP tied HIGH" --> X
+  VM -- "+VM" --> D
+  BUSG -- "GND" --> D
+  D -- "AOUT1 / AOUT2" --> L
+  D -- "BOUT1 / BOUT2" --> R
+
+  USB -- "USB-C" --> X
+  BUS5 -- "negative joins common bus" --> BUSG
+  VM -- "negative joins common bus" --> BUSG
+  X -- "XIAO GND joins common bus" --> BUSG
+
+  CAM["Sense camera<br/>internal; no wires"]
+  MIC["Sense PDM microphone<br/>internal; no wires"]
+  X -. "camera GPIOs reserved" .-> CAM
+  X -. "GPIO42 CLK / GPIO41 DATA" .-> MIC
+
+  WARN["MINIMUM WIRING RULES<br/>1. One 5V bus for servo + amplifier<br/>2. One common ground bus<br/>3. Separate motor VM supply<br/>4. No speaker lead to GND<br/>5. No motor VM or servo 5V to XIAO 3V3"]
+
+  classDef controller fill:#d9ecff,stroke:#1d5d9b,color:#111,stroke-width:2px;
+  classDef front fill:#e8f4ff,stroke:#4788b8,color:#111;
+  classDef audio fill:#f0e5ff,stroke:#7143a5,color:#111;
+  classDef power fill:#fff0b8,stroke:#9a6700,color:#111;
+  classDef motor fill:#ffe8d1,stroke:#a85e00,color:#111;
+  classDef internal fill:#eeeeee,stroke:#666,color:#111;
+  classDef warning fill:#ffd8d8,stroke:#a52a2a,color:#111,stroke-width:2px;
+
+  class X controller;
+  class O,S front;
+  class AMP,SPK audio;
+  class BUS5,BUSG,VM,USB power;
+  class D,L,R motor;
+  class CAM,MIC internal;
+  class WARN warning;
+
+  %% Use red wires for +5V, black for GND, blue for motor inputs, yellow for I2S/I2C.
+  %% The diagram is physical placement guidance, not a substitute for checking the carrier silkscreen.

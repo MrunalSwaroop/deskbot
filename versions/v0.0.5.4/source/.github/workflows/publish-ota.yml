@@ -1,0 +1,161 @@
+name: Publish Deskbot OTA
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'boards/**'
+      - 'firmware/**'
+      - 'modules/**'
+      - 'fleet/**'
+      - 'tools/**'
+      - 'VERSION'
+      - 'CHANGE_SUMMARY.md'
+      - 'docs/**'
+      - '.github/workflows/publish-ota.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: deskbot-pages
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+      - name: Install ESP32 core and libraries
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32@3.3.7
+          arduino-cli lib install "Adafruit GFX Library"
+          arduino-cli lib install "Adafruit SSD1306"
+          arduino-cli lib install "ESP32Servo"
+      - name: Check release contract
+        run: python3 tools/check_release.py
+      - name: Calculate release and fleet policy
+        id: release
+        shell: bash
+        run: |
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "VERSION must be four-part semver for OTA releases: $VERSION"
+            exit 1
+          fi
+          OWNER="${{ github.repository_owner }}"
+          REPOSITORY="${{ github.event.repository.name }}"
+          PAGES_BASE="https://${OWNER}.github.io/${REPOSITORY}"
+          ROLLOUT="$(jq -r '.rollout // "all"' fleet/selected_boards.json)"
+          BOARDS="$(jq -c '.boards // ["all"]' fleet/selected_boards.json)"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "pages_base=${PAGES_BASE}" >> "$GITHUB_OUTPUT"
+          echo "rollout=${ROLLOUT}" >> "$GITHUB_OUTPUT"
+          echo "boards=${BOARDS}" >> "$GITHUB_OUTPUT"
+          cat > firmware/xiao_esp32s3_sense/ota_target.h <<EOF
+          #pragma once
+          #define ROCKY_OTA_ENABLED 1
+          #define APP_VERSION "${VERSION}"
+          #define OTA_UPDATE_URL "${PAGES_BASE}/ota/XIAO-ESP32S3.bin"
+          #define OTA_MANIFEST_URL "${PAGES_BASE}/ota/xiao-esp32s3-manifest.json"
+          #define OTA_MANIFEST_HOST "${OWNER}.github.io"
+          #define OTA_MANIFEST_PATH "/${REPOSITORY}/ota/xiao-esp32s3-manifest.json"
+          #define OTA_CATALOG_URL "${PAGES_BASE}/ota/catalog.json"
+          #define OTA_TARGET_VERSION ""
+          EOF
+      - name: Compile XIAO firmware
+        run: |
+          arduino-cli compile \
+            --fqbn 'esp32:esp32:XIAO_ESP32S3:PSRAM=opi,FlashMode=qio,FlashSize=8M,USBMode=hwcdc,CDCOnBoot=default,UploadMode=default,PartitionScheme=default_8MB' \
+            --warnings all \
+            --output-dir build/xiao-esp32s3-sense \
+            firmware/xiao_esp32s3_sense
+      - name: Assemble versioned Pages artifact and catalog
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.release.outputs.version }}"
+          PAGES_BASE="${{ steps.release.outputs.pages_base }}"
+          RELEASE_BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}"
+          mkdir -p site/ota "site/releases/${VERSION}"
+          cp build/xiao-esp32s3-sense/xiao_esp32s3_sense.ino.bin site/ota/XIAO-ESP32S3.bin
+          cp site/ota/XIAO-ESP32S3.bin "site/releases/${VERSION}/XIAO-ESP32S3.bin"
+          SHA="$(sha256sum site/ota/XIAO-ESP32S3.bin | cut -d ' ' -f 1)"
+          echo "${SHA}  XIAO-ESP32S3.bin" > site/ota/SHA256SUMS.txt
+          cp site/ota/SHA256SUMS.txt "site/releases/${VERSION}/SHA256SUMS.txt"
+          cat > site/ota/xiao-esp32s3-manifest.json <<EOF
+          {
+            "device": "XIAO-ESP32S3",
+            "version": "${VERSION}",
+            "firmware": "${PAGES_BASE}/ota/XIAO-ESP32S3.bin",
+            "sha256": "${SHA}",
+            "rollout": "${{ steps.release.outputs.rollout }}",
+            "boards": ${{ steps.release.outputs.boards }},
+            "source": "${{ github.sha }}"
+          }
+          EOF
+          cp site/ota/xiao-esp32s3-manifest.json "site/releases/${VERSION}/manifest.json"
+          if curl -fsSL "${PAGES_BASE}/ota/catalog.json" -o /tmp/catalog.json; then
+            jq 'if (.versions | type) == "array" then . else {versions: []} end' /tmp/catalog.json > site/ota/catalog.json
+          else
+            echo '{"device":"XIAO-ESP32S3","versions":[]}' > site/ota/catalog.json
+          fi
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > /tmp/releases.json || echo '[]' > /tmp/releases.json
+          jq --arg device "XIAO-ESP32S3" --slurpfile releases /tmp/releases.json \
+             '.device=$device | .versions = ((.versions // []) + ($releases[0] // [] | map(select(.draft == false and .prerelease == false) | {version:(.tag_name | ltrimstr("v")), firmware:([.assets[]? | select(.name == "XIAO-ESP32S3.bin") | .browser_download_url][0] // ""), manifest:([.assets[]? | select(.name == "manifest.json") | .browser_download_url][0] // ""), sha256:([.assets[]? | select(.name == "SHA256SUMS.txt") | .browser_download_url][0] // ""), source:.target_commitish}))) | .versions |= map(select(.firmware != "")) | .versions |= unique_by(.version)' \
+             site/ota/catalog.json > site/ota/catalog.releases.tmp && mv site/ota/catalog.releases.tmp site/ota/catalog.json
+          jq --arg version "${VERSION}" \
+             --arg firmware "${RELEASE_BASE}/XIAO-ESP32S3.bin" \
+             --arg manifest "${PAGES_BASE}/releases/${VERSION}/manifest.json" \
+             --arg sha256 "${SHA}" \
+             --arg source "${{ github.sha }}" \
+             '.versions = ([.versions[] | select(.version != $version)] + [{version:$version,firmware:$firmware,manifest:$manifest,sha256:$sha256,source:$source,current:true}] | map(.current = (.version == $version)) | sort_by(.version) | reverse)' \
+             site/ota/catalog.json > site/ota/catalog.tmp && mv site/ota/catalog.tmp site/ota/catalog.json
+          cp site/ota/catalog.json "site/releases/${VERSION}/catalog.json"
+          cat > site/index.html <<EOF
+          <!doctype html><meta charset="utf-8"><title>Deskbot OTA</title><h1>Deskbot OTA</h1><p>Current XIAO-ESP32S3 release: ${VERSION}</p><p>Version catalog: <a href="ota/catalog.json">ota/catalog.json</a></p>
+          EOF
+      - name: Create GitHub Release with firmware asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "v${{ steps.release.outputs.version }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload "v${{ steps.release.outputs.version }}" \
+              "site/releases/${{ steps.release.outputs.version }}/XIAO-ESP32S3.bin" \
+              "site/releases/${{ steps.release.outputs.version }}/manifest.json" \
+              "site/releases/${{ steps.release.outputs.version }}/SHA256SUMS.txt" \
+              --clobber --repo "${{ github.repository }}"
+          else
+            gh release create "v${{ steps.release.outputs.version }}" \
+              "site/releases/${{ steps.release.outputs.version }}/XIAO-ESP32S3.bin" \
+              "site/releases/${{ steps.release.outputs.version }}/manifest.json" \
+              "site/releases/${{ steps.release.outputs.version }}/SHA256SUMS.txt" \
+              --repo "${{ github.repository }}" \
+              --target "${{ github.sha }}" \
+              --title "Deskbot v${{ steps.release.outputs.version }}" \
+              --notes "Automated XIAO ESP32-S3 Sense firmware release. Use the Pages catalog for intentional upgrade or downgrade selection."
+          fi
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - name: Deploy Pages artifact
+        id: deployment
+        uses: actions/deploy-pages@v4

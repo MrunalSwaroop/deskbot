@@ -116,9 +116,38 @@ jobs:
             echo '{"device":"XIAO-ESP32S3","versions":[]}' > site/ota/catalog.json
           fi
           gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" > /tmp/releases.json || echo '[]' > /tmp/releases.json
-          jq --arg device "XIAO-ESP32S3" --slurpfile releases /tmp/releases.json \
-             '.device=$device | .versions = ((.versions // []) + ($releases[0] // [] | map(select(.draft == false and .prerelease == false) | {version:(.tag_name | ltrimstr("v")), firmware:([.assets[]? | select(.name == "XIAO-ESP32S3.bin") | .browser_download_url][0] // ""), manifest:([.assets[]? | select(.name == "manifest.json") | .browser_download_url][0] // ""), sha256:([.assets[]? | select(.name == "SHA256SUMS.txt") | .browser_download_url][0] // ""), source:.target_commitish}))) | .versions |= map(select(.firmware != "")) | .versions |= unique_by(.version)' \
-             site/ota/catalog.json > site/ota/catalog.releases.tmp && mv site/ota/catalog.releases.tmp site/ota/catalog.json
+          python3 - <<'PY'
+          import json, pathlib, urllib.request
+          releases = json.load(open('/tmp/releases.json'))
+          entries = []
+          for release in releases:
+              if release.get('draft') or release.get('prerelease'):
+                  continue
+              assets = {a.get('name'): a.get('browser_download_url', '') for a in release.get('assets', [])}
+              firmware = assets.get('XIAO-ESP32S3.bin', '')
+              manifest_url = assets.get('manifest.json', '')
+              checksum_url = assets.get('SHA256SUMS.txt', '')
+              if not firmware or not manifest_url:
+                  continue
+              try:
+                  manifest = json.load(urllib.request.urlopen(manifest_url, timeout=20))
+              except Exception:
+                  manifest = {}
+              sha256 = ''
+              if checksum_url:
+                  try:
+                      sha256 = urllib.request.urlopen(checksum_url, timeout=20).read().decode().split()[0]
+                  except Exception:
+                      pass
+              entries.append({'version': release.get('tag_name', '').lstrip('v'), 'firmware': firmware, 'manifest': manifest_url, 'sha256': sha256, 'source': manifest.get('source', release.get('target_commitish', ''))})
+          catalog = json.load(open('site/ota/catalog.json'))
+          known = {x.get('version'): x for x in catalog.get('versions', [])}
+          for item in entries:
+              known[item['version']] = item
+          catalog['device'] = 'XIAO-ESP32S3'
+          catalog['versions'] = sorted(known.values(), key=lambda x: list(map(int, x.get('version', '0.0.0').split('.'))), reverse=True)
+          pathlib.Path('site/ota/catalog.json').write_text(json.dumps(catalog, indent=2) + '\n')
+          PY
           jq --arg version "${VERSION}" \
              --arg firmware "${RELEASE_BASE}/XIAO-ESP32S3.bin" \
              --arg manifest "${PAGES_BASE}/releases/${VERSION}/manifest.json" \

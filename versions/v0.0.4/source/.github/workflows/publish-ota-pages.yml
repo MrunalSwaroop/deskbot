@@ -1,0 +1,88 @@
+name: Publish XIAO OTA
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'xiao_bringup/**'
+      - '.github/workflows/publish-ota-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+      - name: Install ESP32 core and libraries
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32
+          arduino-cli lib install "Adafruit GFX Library"
+          arduino-cli lib install "Adafruit SSD1306"
+          arduino-cli lib install "ESP32Servo"
+      - name: Generate release target
+        id: version
+        shell: bash
+        run: |
+          # The USB bootstrap is 0.3.0; every Pages build must be newer.
+          VERSION="0.3.${GITHUB_RUN_NUMBER}"
+          PAGES_BASE="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "pages_base=${PAGES_BASE}" >> "$GITHUB_OUTPUT"
+          cat > xiao_bringup/ota_target.h <<EOF
+          #pragma once
+          #define APP_VERSION "${VERSION}"
+          #define OTA_UPDATE_URL "${PAGES_BASE}/ota/XIAO-ESP32S3.bin"
+          #define OTA_MANIFEST_URL "${PAGES_BASE}/ota/xiao-esp32s3-manifest.json"
+          #define OTA_MANIFEST_HOST "${{ github.repository_owner }}.github.io"
+          #define OTA_MANIFEST_PATH "/${{ github.event.repository.name }}/ota/xiao-esp32s3-manifest.json"
+          #define OTA_TARGET_VERSION ""
+          EOF
+      - name: Compile XIAO firmware
+        run: |
+          arduino-cli compile \
+            --fqbn esp32:esp32:XIAO_ESP32S3 \
+            --warnings all \
+            --output-dir build/xiao \
+            xiao_bringup
+      - name: Assemble Pages artifact
+        shell: bash
+        run: |
+          mkdir -p site/ota
+          cp build/xiao/xiao_bringup.ino.bin site/ota/XIAO-ESP32S3.bin
+          printf '%s\n' '${{ steps.version.outputs.version }}' > site/ota/XIAO-ESP32S3.version
+          cat > site/ota/xiao-esp32s3-manifest.json <<EOF
+          {
+            "device": "XIAO-ESP32S3",
+            "version": "${{ steps.version.outputs.version }}",
+            "firmware": "${{ steps.version.outputs.pages_base }}/ota/XIAO-ESP32S3.bin"
+          }
+          EOF
+          cat > site/index.html <<EOF
+          <!doctype html><title>Rocky XIAO OTA</title><h1>Rocky XIAO OTA</h1><p>Published version ${{ steps.version.outputs.version }}</p><p>Firmware is selected by the device manifest.</p>
+          EOF
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - name: Deploy Pages artifact
+        id: deployment
+        uses: actions/deploy-pages@v4

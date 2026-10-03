@@ -1,0 +1,67 @@
+name: Build all boards
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'boards/**'
+      - 'firmware/**'
+      - 'modules/**'
+      - 'hardware/**'
+      - 'fleet/**'
+      - 'tools/**'
+      - 'VERSION'
+      - '.github/workflows/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'boards/**'
+      - 'firmware/**'
+      - 'modules/**'
+      - 'hardware/**'
+      - 'fleet/**'
+      - 'tools/**'
+      - 'VERSION'
+      - '.github/workflows/**'
+
+permissions:
+  contents: read
+
+jobs:
+  build-xiao-esp32s3-sense:
+    name: Build XIAO ESP32-S3 Sense
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+      - name: Install ESP32 core
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32@3.3.7
+      - name: Install libraries
+        run: |
+          arduino-cli lib install "Adafruit GFX Library"
+          arduino-cli lib install "Adafruit SSD1306"
+          arduino-cli lib install "ESP32Servo"
+      - name: Check release contract
+        run: python3 tools/check_release.py
+      - name: Compile XIAO firmware
+        run: |
+          test ! -e firmware/xiao_esp32s3_sense/ota_target.h
+          arduino-cli compile \
+            --fqbn 'esp32:esp32:XIAO_ESP32S3:PSRAM=opi,FlashMode=qio,FlashSize=8M,USBMode=hwcdc,CDCOnBoot=default,UploadMode=default,PartitionScheme=default_8MB' \
+            --warnings all \
+            --output-dir build/xiao-esp32s3-sense \
+            firmware/xiao_esp32s3_sense
+      - name: Upload compile artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deskbot-xiao-esp32s3-sense-firmware
+          path: |
+            build/xiao-esp32s3-sense/*.bin
+            build/xiao-esp32s3-sense/*.elf
+            build/xiao-esp32s3-sense/*.map
+          if-no-files-found: error

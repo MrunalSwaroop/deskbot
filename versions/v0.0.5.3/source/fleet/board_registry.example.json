@@ -1,0 +1,10 @@
+{
+  "boards": [
+    {
+      "boardId": "XIAO-ABCDEF012345",
+      "profile": "xiao-esp32s3-sense",
+      "name": "deskbot-01",
+      "enabled": true
+    }
+  ]
+}

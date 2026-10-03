@@ -1,3 +1,14 @@
+### Repository organization update — published version folders and catalog metadata
+
+**Requirement:** Make every published version visible in the GitHub repository as a browsable folder, not only as a Release asset, and keep the OTA catalog accurate after historical Releases are published.
+
+**Changes:**
+- Added `versions/v0.0.1/`, `versions/v0.0.4/`, `versions/v0.0.5.1/`, `versions/v0.0.5.2/`, `versions/v0.0.5.3/`, and `versions/v0.0.5.4/`.
+- Each folder contains a buildable active XIAO source snapshot, `RELEASE_METADATA.json`, and direct Release/OTA links.
+- Updated the OTA publication workflow to read historical `manifest.json` and `SHA256SUMS.txt` assets, preserving real source commits and SHA-256 values in `ota/catalog.json`.
+
+**Safety:** No generated binaries, local `ota_target.h`, credentials, or secrets are included in the version folders.
+
 # Rocky-Wall-E POC — Change Summary
 
 This file is included in every ZIP release. It records the requirements addressed, errors corrected, and the files changed in that release.

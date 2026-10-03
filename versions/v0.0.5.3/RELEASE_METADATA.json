@@ -1,0 +1,12 @@
+{
+  "version": "0.0.5.3",
+  "folder": "v0.0.5.3",
+  "source_commit": "5d226d0db5bbb8b0b62f9164e7e145dcdf0be262",
+  "purpose": "Dual Wi-Fi, setup fallback, remote OLED, and versioned OTA catalog",
+  "release_url": "https://github.com/MrunalSwaroop/deskbot/releases/tag/v0.0.5.3",
+  "firmware_url": "https://github.com/MrunalSwaroop/deskbot/releases/download/v0.0.5.3/XIAO-ESP32S3.bin",
+  "manifest_url": "https://github.com/MrunalSwaroop/deskbot/releases/download/v0.0.5.3/manifest.json",
+  "ota_manifest_url": "https://MrunalSwaroop.github.io/deskbot/releases/0.0.5.3/manifest.json",
+  "source_layout": "source/",
+  "generated_binaries_in_git": false
+}

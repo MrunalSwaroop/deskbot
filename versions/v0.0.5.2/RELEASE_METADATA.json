@@ -1,0 +1,12 @@
+{
+  "version": "0.0.5.2",
+  "folder": "v0.0.5.2",
+  "source_commit": "c314447c3eacd343f680d7743e713bf62445ca13",
+  "purpose": "Microphone loopback, speaker volume, and wake-name boundary",
+  "release_url": "https://github.com/MrunalSwaroop/deskbot/releases/tag/v0.0.5.2",
+  "firmware_url": "https://github.com/MrunalSwaroop/deskbot/releases/download/v0.0.5.2/XIAO-ESP32S3.bin",
+  "manifest_url": "https://github.com/MrunalSwaroop/deskbot/releases/download/v0.0.5.2/manifest.json",
+  "ota_manifest_url": "https://MrunalSwaroop.github.io/deskbot/releases/0.0.5.2/manifest.json",
+  "source_layout": "source/",
+  "generated_binaries_in_git": false
+}

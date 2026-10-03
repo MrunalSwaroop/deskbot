@@ -8,13 +8,17 @@ C:\Users\msperavali\OneDrive - VE Commercial Vehicles Ltd\Mrunal\Deskbot
 
 The active controller is the **Seeed XIAO ESP32-S3 Sense**. Historical UNO and generic ESP32 experiments are retained under `legacy/` and are not part of the active XIAO build.
 
-The active release being prepared is **v0.0.5.4**, based on v0.0.5.3. It adds a phone-first dashboard, published-version history in the UI, and a delayed OTA check so the dashboard becomes usable before remote update work begins.
+The current published release is **v0.0.5.4**, based on v0.0.5.3. It adds a phone-first dashboard, published-version history in the UI, and a delayed OTA check so the dashboard becomes usable before remote update work begins.
 
 ## What this release provides
 
 The current XIAO firmware drives the OLED face, pan servo, two-channel DRV8833 with two N90 motors, Sense camera, onboard PDM microphone monitor, MAX98357A I2S tone and microphone loopback output, Wi-Fi provisioning, local dashboard, personalities, face states, head-state behavior, dance, and manifest-based OTA.
 
 The repository is organized so that character art, personality behavior, motion, audio, voice, camera, sensing, networking, board profiles, and OTA policy can be added or removed without scattering hardware assumptions across the project.
+
+## Published version folders
+
+The complete source snapshots for every published milestone are in [`versions/`](versions/). Each folder includes buildable active XIAO source, release metadata, and direct GitHub Release/OTA links.
 
 ## Clean repository layout
 

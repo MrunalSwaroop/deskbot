@@ -10,6 +10,10 @@ The cleaned `main` branch is synchronized with GitHub at the v0.0.5.3 source com
 - Historical GitHub Releases and OTA catalog entries still need the one-time `publish-history.yml` run
 - The catalog therefore initially contains only `0.0.5.3`; after the historical workflow and a catalog refresh it should contain all five versions below
 
+## Browsable source folders
+
+The published milestones are also available as browsable source snapshots under [`versions/`](../versions/). Each folder contains the active XIAO source, board/hardware documentation, release metadata, and direct GitHub Release/OTA links. The folders intentionally omit generated binaries and credentials.
+
 ## What changed in every Deskbot version
 
 | Version | Source milestone | Main changes | GitHub/OTA status |

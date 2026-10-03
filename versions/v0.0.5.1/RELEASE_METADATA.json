@@ -1,0 +1,12 @@
+{
+  "version": "0.0.5.1",
+  "folder": "v0.0.5.1",
+  "source_commit": "f95edb852325a56a45b004a5ab532f8c2b33f6a1",
+  "purpose": "OLED inversion and OTA state/progress UI",
+  "release_url": "https://github.com/MrunalSwaroop/deskbot/releases/tag/v0.0.5.1",
+  "firmware_url": "https://github.com/MrunalSwaroop/deskbot/releases/download/v0.0.5.1/XIAO-ESP32S3.bin",
+  "manifest_url": "https://github.com/MrunalSwaroop/deskbot/releases/download/v0.0.5.1/manifest.json",
+  "ota_manifest_url": "https://MrunalSwaroop.github.io/deskbot/releases/0.0.5.1/manifest.json",
+  "source_layout": "source/",
+  "generated_binaries_in_git": false
+}

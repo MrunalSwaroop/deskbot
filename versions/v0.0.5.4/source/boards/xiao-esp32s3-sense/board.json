@@ -1,0 +1,13 @@
+{
+  "profile": "xiao-esp32s3-sense",
+  "display_name": "Seeed XIAO ESP32-S3 Sense",
+  "fqbn": "esp32:esp32:XIAO_ESP32S3:PSRAM=opi,FlashMode=qio,FlashSize=8M,USBMode=hwcdc,CDCOnBoot=default,UploadMode=default,PartitionScheme=default_8MB",
+  "firmware_directory": "firmware/xiao_esp32s3_sense",
+  "firmware_sketch": "firmware/xiao_esp32s3_sense/xiao_esp32s3_sense.ino",
+  "device_type": "XIAO-ESP32S3",
+  "psram_required_for_camera": true,
+  "ota_partition_required": true,
+  "pinmap": "boards/xiao-esp32s3-sense/pinmap.h",
+  "core_version": "3.3.7",
+  "release_version_format": "x.y.z.w"
+}
