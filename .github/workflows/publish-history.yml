@@ -74,6 +74,31 @@ jobs:
           }
           EOF
 
+      - name: Ensure historical tag exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="v${{ matrix.version }}"
+          TARGET="${{ matrix.commit }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          REMOTE_SHA="$(git ls-remote origin "refs/tags/${TAG}^{}" | awk '{print $1}')"
+          if [ -z "$REMOTE_SHA" ]; then
+            REMOTE_SHA="$(git ls-remote origin "refs/tags/${TAG}" | awk '{print $1}')"
+          fi
+          if [ -n "$REMOTE_SHA" ]; then
+            if [ "$REMOTE_SHA" != "$TARGET" ]; then
+              echo "Existing $TAG points to $REMOTE_SHA, expected $TARGET"
+              exit 1
+            fi
+            echo "$TAG already points to $TARGET"
+          else
+            git tag -f "$TAG" "$TARGET"
+            git push origin "refs/tags/${TAG}"
+            echo "Created $TAG at $TARGET"
+          fi
       - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -83,7 +108,7 @@ jobs:
           else
             gh release create "v${{ matrix.version }}" XIAO-ESP32S3.bin manifest.json SHA256SUMS.txt \
               --repo "${{ github.repository }}" \
-              --target "${{ matrix.commit }}" \
+              --verify-tag \
               --title "Deskbot v${{ matrix.version }}" \
               --notes "Historical XIAO ESP32-S3 Sense firmware preserved from commit ${{ matrix.commit }}."
           fi
