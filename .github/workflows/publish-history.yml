@@ -9,13 +9,15 @@ permissions:
 jobs:
   publish:
     name: Publish v${{ matrix.version }}
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
           - version: "0.0.1"
-            commit: "07578cf"
+            commit: "07578cf026eb161585037c67768f1b4a59ac9450"
           - version: "0.0.4"
             commit: "9120a983b3ed8a17bfb8108c6694ef7dbb7d3194"
           - version: "0.0.5.1"
@@ -74,7 +76,7 @@ jobs:
 
       - name: Create or update GitHub Release
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if gh release view "v${{ matrix.version }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             gh release upload "v${{ matrix.version }}" XIAO-ESP32S3.bin manifest.json SHA256SUMS.txt --clobber --repo "${{ github.repository }}"
