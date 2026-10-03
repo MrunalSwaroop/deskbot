@@ -8,7 +8,7 @@ C:\Users\msperavali\OneDrive - VE Commercial Vehicles Ltd\Mrunal\Deskbot
 
 The active controller is the **Seeed XIAO ESP32-S3 Sense**. Historical UNO and generic ESP32 experiments are retained under `legacy/` and are not part of the active XIAO build.
 
-The running OTA-stable baseline is **v0.0.4**. This release adds the first exact four-part OTA version, **v0.0.5.1**, plus persistent OLED inversion and visible OTA progress.
+The active release being prepared is **v0.0.5.3**, based on the saved v0.0.5.2 firmware. It adds dual Wi-Fi fallback, remote OLED monitoring, a retained OTA version catalog, and a dashboard change log.
 
 ## What this release provides
 
@@ -65,7 +65,7 @@ Keep the motor supply disconnected and the robot lifted during the first hardwar
 
 If Wi-Fi has not been configured, the board starts `Rocky-XIAO-Setup` and prints `DASHBOARD: http://192.168.4.1`. Save a 2.4 GHz network, reconnect to it, and open the exact `DASHBOARD: http://...` address printed by Serial Monitor. Never use `0.0.0.0` as the browser address.
 
-The dashboard provides face and personality buttons, pan servo, individual motor tests and inversion, dance control, camera snapshot/live preview, microphone-to-speaker loopback, software speaker volume, wake-name test controls, MAX98357A tone testing, status, Wi-Fi configuration, and **Restart and check OTA**. It is intentionally local and must not be port-forwarded to the public internet.
+The dashboard provides face and personality buttons, pan servo, individual motor tests and inversion, dance control, camera snapshot/live preview, microphone-to-speaker loopback, software speaker volume, wake-name test controls, MAX98357A tone testing, status, Wi-Fi configuration, a **What changed** release card, and **Restart and check OTA**. The machine-readable change log is also available at `/api/changes`. It is intentionally local and must not be port-forwarded to the public internet.
 
 ## Modularity rules
 
@@ -143,3 +143,7 @@ Every release updates [`CHANGE_SUMMARY.md`](CHANGE_SUMMARY.md) with the requirem
 
 
 For the exact v0.0.5.2 commit, push, OTA verification, microphone loopback, volume, and wake-name test checklist, read [`docs/RELEASE_V0.0.5.2.md`](docs/RELEASE_V0.0.5.2.md).
+
+For v0.0.5.3 dual-Wi-Fi setup, remote OLED monitoring, version selection, and upgrade/downgrade testing, read [`docs/RELEASE_V0.0.5.3.md`](docs/RELEASE_V0.0.5.3.md).
+
+For the complete version inventory, historical GitHub Release workflow, catalog refresh, and dashboard change-log verification, read [`docs/RELEASE_HISTORY.md`](docs/RELEASE_HISTORY.md).

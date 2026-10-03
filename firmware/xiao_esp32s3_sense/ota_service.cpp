@@ -145,7 +145,52 @@ int OtaService::progress() const {
 bool OtaService::updateAvailable() const {
   return updateAvailable_;
 }
-
+const char *OtaService::targetVersion() const {
+  return targetVersion_;
+}
+const char *OtaService::catalogUrl() const {
+  return OTA_CATALOG_URL;
+}
+bool OtaService::setTargetVersion(const String &version) {
+  int major = 0, minor = 0, patch = 0, build = 0;
+  if (!parseVersion(version.c_str(), major, minor, patch, build)) return false;
+  version.toCharArray(targetVersion_, sizeof(targetVersion_));
+  Preferences preferences;
+  preferences.begin("rocky-xiao", false);
+  preferences.putString("otaTarget", version);
+  preferences.end();
+  updateAvailable_ = true;
+  setState(OtaState::UpdateAvailable, 0);
+  return true;
+}
+void OtaService::clearTargetVersion() {
+  targetVersion_[0] = '\0';
+  Preferences preferences;
+  preferences.begin("rocky-xiao", false);
+  preferences.remove("otaTarget");
+  preferences.end();
+}
+bool OtaService::fetchCatalog(String &catalog) {
+#if defined(ARDUINO_ARCH_ESP32)
+  if (OTA_CATALOG_URL[0] == '\0') return false;
+  NetworkClientSecure client;
+  client.setHandshakeTimeout(10);
+  client.setCACert(pages_root_ca);
+  HTTPClient http;
+  http.setConnectTimeout(10000);
+  http.setTimeout(10000);
+  http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
+  if (!http.begin(client, OTA_CATALOG_URL)) return false;
+  const int statusCode = http.GET();
+  if (statusCode != HTTP_CODE_OK) { http.end(); return false; }
+  catalog = http.getString();
+  http.end();
+  return catalog.length() > 0;
+#else
+  (void)catalog;
+  return false;
+#endif
+}
 void OtaService::setState(OtaState state, int progress) {
   state_ = state;
   if (progress >= 0) progress_ = constrain(progress, 0, 100);
@@ -218,6 +263,9 @@ void OtaService::begin() {
   preferences.begin("rocky-xiao", false);
   const String storedSsid = preferences.getString("ssid", "");
   const String storedPassword = preferences.getString("pass", "");
+  String storedTarget = preferences.getString("otaTarget", "");
+  if (storedTarget.length() == 0 && OTA_TARGET_VERSION[0] != '\0') storedTarget = OTA_TARGET_VERSION;
+  storedTarget.toCharArray(targetVersion_, sizeof(targetVersion_));
 
   if (storedSsid.length() > 0) {
     storedSsid.toCharArray(ssid_, sizeof(ssid_));
@@ -551,31 +599,69 @@ void OtaService::tryRemoteUpdate() {
   setState(OtaState::Checking, 0);
 
   char remoteVersion[24] = {};
-  if (!fetchManifestVersion(remoteVersion, sizeof(remoteVersion), manifestAllowed_)) {
-    setError("manifest fetch failed");
-    return;
-  }
-  strncpy(remoteVersion_, remoteVersion, sizeof(remoteVersion_) - 1);
-  remoteVersion_[sizeof(remoteVersion_) - 1] = '\0';
-  manifestChecked_ = true;
+  String updateUrl = OTA_UPDATE_URL;
+  bool explicitTarget = targetVersion_[0] != '\0';
 
-  if (!manifestAllowed_) {
-    setState(OtaState::NotSelected, 0);
-    return;
+  if (explicitTarget) {
+    String catalog;
+    if (!fetchCatalog(catalog)) {
+      setError("version catalog fetch failed");
+      return;
+    }
+    const String needle = String("\"version\":\"") + targetVersion_ + "\"";
+    const int versionPos = catalog.indexOf(needle);
+    if (versionPos < 0) {
+      setError(String("version not found in catalog: ") + targetVersion_);
+      return;
+    }
+    const int firmwareKey = catalog.indexOf("\"firmware\"", versionPos);
+    const int colon = catalog.indexOf(':', firmwareKey);
+    const int firstQuote = catalog.indexOf('"', colon);
+    const int secondQuote = catalog.indexOf('"', firstQuote + 1);
+    if (firmwareKey < 0 || colon < 0 || firstQuote < 0 || secondQuote <= firstQuote) {
+      setError("catalog firmware URL missing");
+      return;
+    }
+    updateUrl = catalog.substring(firstQuote + 1, secondQuote);
+    strncpy(remoteVersion_, targetVersion_, sizeof(remoteVersion_) - 1);
+    remoteVersion_[sizeof(remoteVersion_) - 1] = '\0';
+    strncpy(remoteVersion, targetVersion_, sizeof(remoteVersion) - 1);
+    remoteVersion[sizeof(remoteVersion) - 1] = '\0';
+    manifestAllowed_ = true;
+    manifestChecked_ = true;
+    Serial.print("OTA bootstrap: explicit target selected="); Serial.println(remoteVersion);
+  } else {
+    if (!fetchManifestVersion(remoteVersion, sizeof(remoteVersion), manifestAllowed_)) {
+      setError("manifest fetch failed");
+      return;
+    }
+    strncpy(remoteVersion_, remoteVersion, sizeof(remoteVersion_) - 1);
+    remoteVersion_[sizeof(remoteVersion_) - 1] = '\0';
+    manifestChecked_ = true;
+    if (!manifestAllowed_) {
+      setState(OtaState::NotSelected, 0);
+      return;
+    }
   }
 
-  if (!isNewerVersion(remoteVersion, APP_VERSION)) {
+  if (!explicitTarget && !isNewerVersion(remoteVersion, APP_VERSION)) {
     updateAvailable_ = false;
     setState(OtaState::UpToDate, 100);
     Serial.print("OTA bootstrap: already running version ");
     Serial.println(APP_VERSION);
     return;
   }
+  if (explicitTarget && strcmp(remoteVersion, APP_VERSION) == 0) {
+    updateAvailable_ = false;
+    clearTargetVersion();
+    setState(OtaState::UpToDate, 100);
+    Serial.println("OTA bootstrap: selected target is already running");
+    return;
+  }
 
   updateAvailable_ = true;
   setState(OtaState::UpdateAvailable, 0);
-
-  if (OTA_UPDATE_URL[0] == '\0') {
+  if (updateUrl.length() == 0) {
     setError("update package URL missing");
     return;
   }
@@ -587,33 +673,26 @@ void OtaService::tryRemoteUpdate() {
   NetworkClientSecure client;
   client.setHandshakeTimeout(30);
   client.setCACert(pages_root_ca);
-  // The XIAO may receive the binary through a slow or high-latency route.
-  // HTTPUpdate's default 8-second stream timeout is too aggressive here.
   HTTPUpdate updater(120000);
   updater.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
   updater.rebootOnUpdate(true);
-  updater.onStart([this]() {
-    setState(OtaState::Downloading, 0);
-  });
+  updater.onStart([this]() { setState(OtaState::Downloading, 0); });
   updater.onProgress([this](int current, int total) {
     const int percent = total > 0 ? (current * 100) / total : 0;
     setState(OtaState::Downloading, percent);
   });
-  updater.onEnd([this]() {
-    setState(OtaState::Installing, 100);
-  });
-  updater.onError([this](int error) {
-    setError(String("HTTPUpdate error ") + error);
-  });
+  updater.onEnd([this]() { setState(OtaState::Installing, 100); });
+  updater.onError([this](int error) { setError(String("HTTPUpdate error ") + error); });
 
-  const t_httpUpdate_return result = updater.update(client, OTA_UPDATE_URL, APP_VERSION);
+  const t_httpUpdate_return result = updater.update(client, updateUrl.c_str(), APP_VERSION);
   if (result == HTTP_UPDATE_OK) {
+    clearTargetVersion();
     setState(OtaState::Rebooting, 100);
     Serial.println("OTA bootstrap: XIAO update accepted; board will reboot");
   } else if (result == HTTP_UPDATE_NO_UPDATES) {
     updateAvailable_ = false;
     setState(OtaState::UpToDate, 100);
-    Serial.println("OTA bootstrap: XIAO server reported no update");
+    Serial.println("OTA bootstrap: server reported no update");
   } else {
     setError(updater.getLastErrorString());
     Serial.print("OTA bootstrap: XIAO update failed: ");

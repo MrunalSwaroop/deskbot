@@ -13,6 +13,7 @@ The sketch is intentionally a bring-up base. It proves each hardware function in
 | `device_config.h` | Build defaults and OTA feature switch |
 | `ota_service.cpp/.h` | HTTPS manifest, board identity, semantic versioning, and fleet selection |
 | `../../modules/core/` | Shared face-state and personality contracts |
+| `../../modules/core/release_notes.h` | Versioned dashboard change log and release summary |
 | `../../modules/faces/` | Isabella, Spartan, and Rocky OLED renderers and frames |
 | `../../modules/personalities/` | Replaceable personality descriptions and registry entries |
 | `../../modules/motion/` | Servo, track, and dance contracts |
@@ -91,10 +92,11 @@ The local dashboard is available at:
 http://XIAO_IP/
 http://XIAO_IP/health
 http://XIAO_IP/api/status
+http://XIAO_IP/api/changes
 http://XIAO_IP/wifi
 ```
 
-It provides face and personality buttons, servo control, motor tests and inversion, dance control, camera snapshot/live preview, microphone monitoring, MAX98357A tone testing, status, and Wi-Fi configuration. It is intentionally local and must not be port-forwarded to the public internet.
+It provides face and personality buttons, servo control, motor tests and inversion, dance control, camera snapshot/live preview, microphone monitoring, MAX98357A tone testing, status, Wi-Fi configuration, a **What changed** release card, and OTA controls. The machine-readable release information is available at `/api/changes`. It is intentionally local and must not be port-forwarded to the public internet.
 
 If the normal Wi-Fi connection succeeds but no page opens, use the exact `DASHBOARD: http://...` address printed by the board and make sure the phone/computer is on the same 2.4 GHz network. Do not use `0.0.0.0`; it is a bind/listen address, not a browser destination.
 
@@ -103,7 +105,7 @@ The status API reports a unique board identity and OTA state such as:
 ```json
 {
   "boardId": "XIAO-ABCDEF012345",
-  "firmware": "0.0.5.2",
+  "firmware": "0.0.5.3",
   "otaConfigured": true,
   "otaState": "up_to_date",
   "otaProgress": 100,
@@ -346,3 +348,28 @@ The dashboard has the same controls. The OLED shows a small microphone meter whi
 ### Wake-name boundary
 
 `wake name rocky`, `wake on`, `wake off`, and `wake simulate` test the engagement path. The v0.0.5.2 loopback path cannot identify spoken words by itself; a raw amplitude meter can tell that sound exists but cannot tell whether the word was “Rocky”. A later local wake-word engine or Xiaozhi/relay adapter must call the same engagement function after actual recognition.
+
+## v0.0.5.3 network, OLED mirror, and version catalog
+
+This release stores two Wi-Fi profiles in NVS. The board tries profile 1 and profile 2 at boot and during reconnect. If both remain unavailable for five minutes, it starts `Rocky-XIAO-Setup` at `192.168.4.1`; open that address and save one or two 2.4 GHz networks.
+
+The dashboard now includes:
+
+- a responsive connected-network or setup-AP status badge;
+- a remote OLED mirror refreshed from `/oled.svg`;
+- a two-profile Wi-Fi form at `/wifi`;
+- an OTA version selector populated from `/api/ota/catalog`;
+- explicit `latest` selection or a specific version for a deliberate downgrade.
+
+Serial commands:
+
+```text
+ota latest
+ota target 0.0.5.2
+ota clear
+restart
+```
+
+`ota target` is persisted until a successful update or `ota latest`. It is intended for an intentional upgrade/downgrade while the robot is stationary. The GitHub workflow publishes each binary under `ota/releases/<version>/`, updates `ota/catalog.json`, and creates a matching GitHub Release asset.
+
+Follow [`../../docs/RELEASE_V0.0.5.3.md`](../../docs/RELEASE_V0.0.5.3.md) for the full push, OTA, Wi-Fi fallback, and rollback test order.
