@@ -276,7 +276,7 @@ To add a personality, add a registry entry and one module under `modules/persona
 
 ## GitHub release and OTA
 
-The root `VERSION` file is the human-maintained release source. Push changes from the Deskbot root. GitHub Actions runs the release checker, compiles the XIAO board profile, and publishes a versioned binary and manifest to GitHub Pages.
+The root `VERSION` file is the human-maintained release source. The dashboard is designed for phone use: use the quick-navigation pills, scrollable cards, and full-width touch controls. Push changes from the Deskbot root. GitHub Actions runs the release checker, compiles the XIAO board profile, and publishes a versioned binary and manifest to GitHub Pages.
 
 Before OTA, each board must have one USB-uploaded OTA-capable baseline. The release workflow creates its own ignored `ota_target.h` during CI; it is not committed.
 
@@ -372,4 +372,4 @@ restart
 
 `ota target` is persisted until a successful update or `ota latest`. It is intended for an intentional upgrade/downgrade while the robot is stationary. The GitHub workflow publishes each binary under `ota/releases/<version>/`, updates `ota/catalog.json`, and creates a matching GitHub Release asset.
 
-Follow [`../../docs/RELEASE_V0.0.5.3.md`](../../docs/RELEASE_V0.0.5.3.md) for the full push, OTA, Wi-Fi fallback, and rollback test order.
+Follow [`../../docs/RELEASE_V0.0.5.4.md`](../../docs/RELEASE_V0.0.5.4.md) for the current push, phone-dashboard, OTA, Wi-Fi fallback, and rollback test order. The v0.0.5.3 guide remains available as historical reference.

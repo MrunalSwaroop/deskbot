@@ -77,4 +77,4 @@ Never commit `ota_target.h`, Wi-Fi passwords, API keys, `.env` files, build fold
 [3]: https://wiki.seeedstudio.com/xiao_esp32s3_getting_started/ "Seeed Studio XIAO ESP32-S3 getting started guide"
 
 
-For the current v0.0.5.3 procedure, see [`docs/RELEASE_V0.0.5.3.md`](RELEASE_V0.0.5.3.md).
+For the current v0.0.5.4 procedure, see [`RELEASE_V0.0.5.4.md`](RELEASE_V0.0.5.4.md). The [`RELEASE_V0.0.5.3.md`](RELEASE_V0.0.5.3.md) guide is retained for historical reference.

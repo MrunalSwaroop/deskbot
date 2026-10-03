@@ -1,83 +1,75 @@
 # Deskbot Version History and Release Commands
 
-## Important distinction
+## Current remote status at the start of v0.0.5.4
 
-These are different objects:
+The cleaned `main` branch is synchronized with GitHub at the v0.0.5.3 source commit. At the time this release was prepared:
 
-- `VERSION` is the firmware version compiled by the current source tree.
-- A Git commit saves source history.
-- A Git tag names a specific commit.
-- A GitHub Release is the downloadable firmware package.
-- `ota/catalog.json` is the board’s selectable upgrade/downgrade list.
+- GitHub Release published: `v0.0.5.3`
+- GitHub tag present: `v0.0.5.3` and historical tag `v0.0.4`
+- Historical source commits exist for `v0.0.1`, `v0.0.5.1`, and `v0.0.5.2`
+- Historical GitHub Releases and OTA catalog entries still need the one-time `publish-history.yml` run
+- The catalog therefore initially contains only `0.0.5.3`; after the historical workflow and a catalog refresh it should contain all five versions below
 
-Folders such as `V.0.0.2` and `V0.0.3` are historical source folders, not OTA releases.
+## What changed in every Deskbot version
 
-## Current v0.0.5.3 publish sequence
+| Version | Source milestone | Main changes | GitHub/OTA status |
+|---|---|---|---|
+| `0.0.1` | `07578cf` | Frozen XIAO ESP32-S3 Sense hardware baseline: OLED face, servo pan, DRV8833 dual motors, camera, onboard PDM microphone, MAX98357A audio path, Wi-Fi setup AP, local dashboard, personalities, face states, and modular project layout. | Historical source commit; publish as a Release using `publish-history.yml`. |
+| `0.0.4` | `9120a983` / tag `v0.0.4` | OTA-stable build matched to ESP32 Arduino core `3.3.7`, verified XIAO Sense FQBN, correct 8 MB OTA partition, and recovery after the earlier OTA boot failure. | Tag exists; publish the binary as a historical Release. |
+| `0.0.5.1` | `f95edb8` | Persistent OLED inversion (`on`, `off`, `toggle`), OTA state machine, update-available indication, download progress, installation/reboot states, and dashboard OTA status. | Source commit exists; publish the binary as a historical Release. |
+| `0.0.5.2` | `c314447` | Onboard microphone monitoring, microphone-to-MAX98357A speaker loopback, software speaker volume, OLED microphone/loopback indicators, and wake-name engagement boundary without claiming speech recognition. | Source commit exists; publish the binary as a historical Release. |
+| `0.0.5.3` | `5d226d0` | Two saved Wi-Fi profiles, profile failover, five-minute setup-AP fallback at `192.168.4.1`, remote OLED mirror, retained OTA catalog, intentional version target selection, release notes, and the improved change-log dashboard card. | Current published Release and OTA image. |
+| `0.0.5.4` | next release | Phone-first responsive dashboard, touch-sized control grids, quick navigation, published-version history panel, and delayed OTA startup check. | Source prepared; publish after local validation. |
 
-Run these commands from:
+The folders `V.0.0.2` and `V0.0.3` are historical source folders, not official OTA versions.
+
+## Publish v0.0.5.4
+
+From the Windows Deskbot root:
 
 ```powershell
-C:\Users\msperavali\OneDrive - VE Commercial Vehicles Ltd\Mrunal\Deskbot
-```
-
-```powershell
+cd -LiteralPath "C:\Users\msperavali\OneDrive - VE Commercial Vehicles Ltd\Mrunal\Deskbot"
 Get-Content -LiteralPath ".\VERSION"
 python tools\check_release.py
 git diff --check
+git status --short
 ```
 
-Expected:
+Expected version/check output:
 
 ```text
-0.0.5.3
-RELEASE CHECK OK: Deskbot 0.0.5.3; rollout=all; boards=['all']
+0.0.5.4
+RELEASE CHECK OK: Deskbot 0.0.5.4; rollout=all; boards=['all']
 ```
 
 Then commit and push:
 
 ```powershell
-git status --short
 git add .
 git diff --cached --check
-git commit -m "Deskbot v0.0.5.3 dual Wi-Fi remote OLED and release notes"
+git commit -m "Deskbot v0.0.5.4 mobile dashboard and deferred OTA"
 git push origin main
 ```
 
-Wait for **Build all boards** and **Publish Deskbot OTA** to become green. The publish workflow creates:
+Wait for **Build all boards**, **Deskbot release check**, and **Publish Deskbot OTA** to become green.
 
-- Git tag `v0.0.5.3`;
-- GitHub Release `Deskbot v0.0.5.3`;
-- `XIAO-ESP32S3.bin` release asset;
-- Pages path `ota/releases/0.0.5.3/`;
-- the current manifest;
-- the retained `ota/catalog.json`.
+## Publish the historical releases once
 
-Verify from PowerShell:
-
-```powershell
-Invoke-RestMethod "https://MrunalSwaroop.github.io/deskbot/ota/xiao-esp32s3-manifest.json"
-Invoke-RestMethod "https://MrunalSwaroop.github.io/deskbot/ota/catalog.json"
-gh release list --repo MrunalSwaroop/deskbot
-```
-
-The manifest should show `version : 0.0.5.3`. The catalog should contain the current release and any historical releases already created.
-
-## Publish the historical releases
-
-After v0.0.5.3 is pushed and the workflow file is visible on GitHub, start the one-time historical rebuild from PowerShell:
+After the v0.0.5.4 workflow is green:
 
 ```powershell
 gh workflow run publish-history.yml --repo MrunalSwaroop/deskbot --ref main
-gh run list --repo MrunalSwaroop/deskbot --workflow publish-history.yml --limit 1
+$historyRunId = gh run list --repo MrunalSwaroop/deskbot --workflow publish-history.yml --limit 1 --json databaseId --jq '.[0].databaseId'
+gh run watch $historyRunId --repo MrunalSwaroop/deskbot --exit-status
 ```
 
-Wait until the four matrix jobs in **Publish historical Deskbot releases** are green. Then verify:
+Then verify:
 
 ```powershell
 gh release list --repo MrunalSwaroop/deskbot --limit 20
 ```
 
-Expected official release tags include:
+Expected official releases:
 
 ```text
 v0.0.1
@@ -85,88 +77,60 @@ v0.0.4
 v0.0.5.1
 v0.0.5.2
 v0.0.5.3
+v0.0.5.4
 ```
 
-Finally rerun the current OTA workflow so it merges the GitHub Release assets into the Pages catalog:
+## Refresh the catalog
+
+After historical publishing succeeds, run the current OTA workflow again:
 
 ```powershell
 gh workflow run publish-ota.yml --repo MrunalSwaroop/deskbot --ref main
-gh run list --repo MrunalSwaroop/deskbot --workflow publish-ota.yml --limit 1
-```
-
-After that run is green:
-
-```powershell
+$catalogRunId = gh run list --repo MrunalSwaroop/deskbot --workflow publish-ota.yml --limit 1 --json databaseId --jq '.[0].databaseId'
+gh run watch $catalogRunId --repo MrunalSwaroop/deskbot --exit-status
 $catalog = Invoke-RestMethod "https://MrunalSwaroop.github.io/deskbot/ota/catalog.json"
-$catalog.versions | Select-Object version, firmware, current
+$catalog.versions | Sort-Object version | Format-Table version, current, firmware
 ```
 
-The output should contain the five official versions. The board’s OTA selector will then be able to display those versions.
-
-## Historical versions
-
-The source history currently contains these meaningful XIAO milestones:
-
-| Version | Source commit or tag | Meaning |
-|---|---|---|
-| 0.0.1 | `07578cf` | Frozen hardware baseline |
-| 0.0.4 | tag `v0.0.4`, commit `9120a98` | OTA-stable core-3.3.7 baseline |
-| 0.0.5.1 | `f95edb8` | OLED inversion and OTA feedback |
-| 0.0.5.2 | `c314447` | Microphone loopback and voice boundary |
-| 0.0.5.3 | current release commit after push | Dual Wi-Fi, remote OLED, retained catalog, and release notes |
-
-`V.0.0.2` and `V0.0.3` are retained source folders and should not be represented as official OTA versions unless they are separately rebuilt and tested.
-
-## Verify the dashboard release card
-
-After the board updates to v0.0.5.3, open:
+Expected versions:
 
 ```text
-http://XIAO_IP/
+0.0.1
+0.0.4
+0.0.5.1
+0.0.5.2
+0.0.5.3
+0.0.5.4
 ```
 
-The top of the dashboard should show:
+## Phone dashboard verification
 
-- **What changed**;
-- release badge `v0.0.5.3`;
-- a summary;
-- a bullet list of the release changes;
-- a link to `/api/changes`.
-
-The direct endpoint is:
+Open the exact IP printed by the board, for example:
 
 ```text
-http://XIAO_IP/api/changes
+http://192.168.31.139/
 ```
 
-Expected JSON fields:
+On a phone, verify:
 
-```json
-{
-  "version": "0.0.5.3",
-  "title": "Dual Wi-Fi, remote OLED, and versioned OTA",
-  "summary": "...",
-  "changes": ["...", "..."]
-}
-```
+- quick-navigation pills for Status, Faces, Motion, Audio, Camera, and OTA;
+- controls arranged in touch-sized grids rather than long inline button rows;
+- status and OLED mirror cards fit the screen without horizontal scrolling;
+- the Firmware and OTA card shows the published version history;
+- **What changed** shows the installed release and its change list;
+- the dashboard remains reachable during the first seconds of boot before the OTA check begins.
 
-## Selecting another OTA version
+## Reboot and OTA timing
 
-Use the dashboard catalog selector, or the serial command path:
+The previous firmware called the HTTPS manifest check from `setup()`. This meant TLS, manifest parsing, and a firmware download could delay the first usable dashboard. v0.0.5.4 moves the first OTA check out of the critical boot path:
 
-```text
-ota target 0.0.5.2
-restart
-```
+1. hardware initializes;
+2. Wi-Fi and `WebServer` start;
+3. the dashboard becomes reachable;
+4. four seconds later the OTA manifest check begins;
+5. if an update is available, the download temporarily pauses normal firmware work and then reboots safely.
 
-To return to latest-release behavior:
-
-```text
-ota latest
-restart
-```
-
-Only choose a version that has a valid `XIAO-ESP32S3.bin` asset in the catalog. Keep the robot stationary during installation.
+A real OTA download cannot safely run completely invisibly while the firmware is driving motors. Keep the robot stationary and motor power off during installation.
 
 ## Safety checks before every release
 
@@ -176,7 +140,7 @@ git diff --check
 git status --short
 ```
 
-Do not stage:
+Never stage:
 
 ```text
 ota_target.h

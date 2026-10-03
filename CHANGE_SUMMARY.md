@@ -2,6 +2,19 @@
 
 This file is included in every ZIP release. It records the requirements addressed, errors corrected, and the files changed in that release.
 
+### Deskbot v0.0.5.4 — phone dashboard and deferred OTA
+
+**Requirement:** Make the local dashboard usable on a phone, show the version history and changes clearly, explain why reboot/OTA startup is slow, and keep the system modular for future releases.
+
+**Changes:**
+- Rebuilt `handleRoot()` with responsive cards, quick navigation, touch-sized control grids, mobile inputs, version-history rows, and clearer OTA guidance.
+- Replaced the dense desktop-only CSS with responsive phone-first styling and safe viewport handling.
+- Deferred the first ESP32 OTA check by four seconds after boot so Wi-Fi, WebServer, OLED, and dashboard startup complete before HTTPS work begins.
+- Added the complete per-version history and current GitHub/catalog status to `docs/RELEASE_HISTORY.md`.
+- Bumped the release source to `0.0.5.4` and updated dashboard release notes.
+
+**Verification target:** release checker, ESP32 core `3.3.7` compile, dashboard JavaScript parse, then GitHub Actions build and OTA publication.
+
 ## Release date
 
 2026-10-01

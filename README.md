@@ -8,7 +8,7 @@ C:\Users\msperavali\OneDrive - VE Commercial Vehicles Ltd\Mrunal\Deskbot
 
 The active controller is the **Seeed XIAO ESP32-S3 Sense**. Historical UNO and generic ESP32 experiments are retained under `legacy/` and are not part of the active XIAO build.
 
-The active release being prepared is **v0.0.5.3**, based on the saved v0.0.5.2 firmware. It adds dual Wi-Fi fallback, remote OLED monitoring, a retained OTA version catalog, and a dashboard change log.
+The active release being prepared is **v0.0.5.4**, based on v0.0.5.3. It adds a phone-first dashboard, published-version history in the UI, and a delayed OTA check so the dashboard becomes usable before remote update work begins.
 
 ## What this release provides
 
@@ -144,6 +144,8 @@ Every release updates [`CHANGE_SUMMARY.md`](CHANGE_SUMMARY.md) with the requirem
 
 For the exact v0.0.5.2 commit, push, OTA verification, microphone loopback, volume, and wake-name test checklist, read [`docs/RELEASE_V0.0.5.2.md`](docs/RELEASE_V0.0.5.2.md).
 
-For v0.0.5.3 dual-Wi-Fi setup, remote OLED monitoring, version selection, and upgrade/downgrade testing, read [`docs/RELEASE_V0.0.5.3.md`](docs/RELEASE_V0.0.5.3.md).
+For the current v0.0.5.4 push and phone/OTA verification order, read [`docs/RELEASE_V0.0.5.4.md`](docs/RELEASE_V0.0.5.4.md). For v0.0.5.3 dual-Wi-Fi setup, remote OLED monitoring, version selection, and upgrade/downgrade history, read [`docs/RELEASE_V0.0.5.3.md`](docs/RELEASE_V0.0.5.3.md).
+
+For v0.0.5.4 phone dashboard layout, reboot timing, and the release procedure, read [`docs/RELEASE_V0.0.5.4.md`](docs/RELEASE_V0.0.5.4.md).
 
 For the complete version inventory, historical GitHub Release workflow, catalog refresh, and dashboard change-log verification, read [`docs/RELEASE_HISTORY.md`](docs/RELEASE_HISTORY.md).

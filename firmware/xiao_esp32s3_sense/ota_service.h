@@ -57,4 +57,5 @@ class OtaService {
   OtaState state_ = OtaState::Idle;
   OtaUiCallback uiCallback_ = nullptr;
   unsigned long lastWifiRetryMs_ = 0;
+  unsigned long checkAfterMs_ = 0;
 };

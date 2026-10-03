@@ -292,7 +292,10 @@ void OtaService::begin() {
     WiFi.mode(WIFI_STA);
   }
   lastWifiRetryMs_ = 0;
-  update();
+  // Do not block the critical boot path with HTTPS/TLS or a firmware download.
+  // The main loop will perform the check after the dashboard is responsive.
+  checkAfterMs_ = millis() + 4000UL;
+  Serial.println("OTA bootstrap: check deferred 4 seconds so dashboard can start");
 #else
   Serial.println("OTA bootstrap: Wi-Fi service not enabled for this board yet");
 #endif
@@ -302,6 +305,10 @@ void OtaService::update() {
 #if !ROCKY_OTA_ENABLED
   return;
 #endif
+  if (checkAfterMs_ != 0) {
+    if ((long)(millis() - checkAfterMs_) < 0) return;
+    checkAfterMs_ = 0;
+  }
 #if defined(ARDUINO_UNOR4_WIFI)
   if (ssid_[0] == '\0' || otaChecked_) {
     return;
